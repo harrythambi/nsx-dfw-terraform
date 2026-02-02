@@ -86,13 +86,13 @@ variable "project_id" {
 # =============================================================================
 
 variable "policy_sequence_start" {
-  description = "Starting sequence number for security policies"
+  description = "Starting sequence number for security policies (deprecated - use category-based)"
   type        = number
   default     = 1000
 }
 
 variable "policy_sequence_increment" {
-  description = "Increment between policy sequence numbers"
+  description = "Increment between policy sequence numbers within a category"
   type        = number
   default     = 10
 }
@@ -130,4 +130,14 @@ variable "tolerate_partial_success" {
   description = "Treat partially successful realization as valid state"
   type        = bool
   default     = false
+}
+
+# =============================================================================
+# Predefined Services Lookup
+# =============================================================================
+
+variable "predefined_services_to_lookup" {
+  description = "List of predefined NSX service names to look up via data source for validation"
+  type        = list(string)
+  default     = []
 }

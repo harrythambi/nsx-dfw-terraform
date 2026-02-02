@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/example/nsx-dfw-terraform/schemas/security_policies.schema.json",
+  "title": "NSX-T Security Policies Configuration",
+  "description": "Schema for NSX-T security policies YAML configuration",
+  "type": "object",
+  "required": ["security_policies"],
+  "properties": {
+    "security_policies": {
+      "type": "array",
+      "description": "List of security policy definitions",
+      "items": {
+        "$ref": "#/$defs/securityPolicy"
+      }
+    }
+  },
+  "$defs": {
+    "securityPolicy": {
+      "type": "object",
+      "required": ["name", "display_name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for the policy (used for references)",
+          "pattern": "^[a-z0-9][a-z0-9-_]*[a-z0-9]$|^[a-z0-9]$"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Display name shown in NSX UI",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional description of the policy",
+          "maxLength": 1024
+        },
+        "category": {
+          "type": "string",
+          "description": "Policy category (determines sequence number range)",
+          "enum": ["Emergency", "Infrastructure", "Environment", "Application"],
+          "default": "Application"
+        },
+        "sequence_number": {
+          "type": "integer",
+          "description": "Explicit sequence number (auto-calculated if omitted)",
+          "minimum": 0
+        },
+        "stateful": {
+          "type": "boolean",
+          "description": "Whether the policy is stateful",
+          "default": true
+        },
+        "tcp_strict": {
+          "type": "boolean",
+          "description": "Enable strict TCP state checking",
+          "default": false
+        },
+        "locked": {
+          "type": "boolean",
+          "description": "Lock the policy to prevent changes",
+          "default": false
+        },
+        "scope": {
+          "type": "array",
+          "description": "Policy scope - group names or paths (affects applied_to)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "description": "List of firewall rules in this policy",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "NSX tags to apply to this policy",
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["display_name", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Rule display name",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Rule description"
+        },
+        "action": {
+          "type": "string",
+          "description": "Rule action - REQUIRED (no default)",
+          "enum": ["ALLOW", "DROP", "REJECT"]
+        },
+        "direction": {
+          "type": "string",
+          "description": "Traffic direction",
+          "enum": ["IN", "OUT", "IN_OUT"],
+          "default": "IN_OUT"
+        },
+        "sequence_number": {
+          "type": "integer",
+          "description": "Rule sequence number (auto-calculated if omitted)",
+          "minimum": 0
+        },
+        "source_groups": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Source groups - names, paths, or ['ANY']",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "destination_groups": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Destination groups - names, paths, or ['ANY']",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "services": {
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Services - names, paths, or ['ANY']",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sources_excluded": {
+          "type": "boolean",
+          "description": "Negate source groups",
+          "default": false
+        },
+        "destinations_excluded": {
+          "type": "boolean",
+          "description": "Negate destination groups",
+          "default": false
+        },
+        "profiles": {
+          "type": ["array", "null"],
+          "description": "Context profiles (L7 App-ID)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scope": {
+          "type": "array",
+          "description": "Rule-level scope (overrides policy scope)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "logged": {
+          "type": "boolean",
+          "description": "Enable logging for this rule",
+          "default": false
+        },
+        "disabled": {
+          "type": "boolean",
+          "description": "Disable this rule",
+          "default": false
+        },
+        "ip_version": {
+          "type": "string",
+          "description": "IP version for this rule",
+          "enum": ["IPV4", "IPV6", "IPV4_IPV6"],
+          "default": "IPV4_IPV6"
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Notes/comments for this rule"
+        },
+        "log_label": {
+          "type": ["string", "null"],
+          "description": "Custom log label for this rule"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Rule-level NSX tags",
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        }
+      }
+    },
+    "tag": {
+      "type": "object",
+      "description": "NSX tag",
+      "required": ["tag"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Tag scope (optional)",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag value",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

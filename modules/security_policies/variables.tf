@@ -1,3 +1,7 @@
+# =============================================================================
+# Security Policies Module Variables
+# =============================================================================
+
 variable "security_policies" {
   description = "Map of security policies with their configurations"
   type        = any
@@ -35,4 +39,26 @@ variable "service_paths" {
   description = "Map of service names to paths for reference"
   type        = map(string)
   default     = {}
+}
+
+# =============================================================================
+# Sequence Number Configuration
+# =============================================================================
+
+variable "policy_sequence_increment" {
+  description = "Increment between policy sequence numbers within a category"
+  type        = number
+  default     = 10
+}
+
+variable "rule_sequence_start" {
+  description = "Starting sequence number for rules within a policy"
+  type        = number
+  default     = 100
+}
+
+variable "rule_sequence_increment" {
+  description = "Increment between rule sequence numbers within a policy"
+  type        = number
+  default     = 10
 }

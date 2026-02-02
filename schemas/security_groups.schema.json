@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/example/nsx-dfw-terraform/schemas/security_groups.schema.json",
+  "title": "NSX-T Security Groups Configuration",
+  "description": "Schema for NSX-T security groups YAML configuration",
+  "type": "object",
+  "required": ["security_groups"],
+  "properties": {
+    "security_groups": {
+      "type": "array",
+      "description": "List of security group definitions",
+      "items": {
+        "$ref": "#/$defs/securityGroup"
+      }
+    }
+  },
+  "$defs": {
+    "securityGroup": {
+      "type": "object",
+      "required": ["name", "display_name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for the group (used for references)",
+          "pattern": "^[a-z0-9][a-z0-9-_]*[a-z0-9]$|^[a-z0-9]$"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Display name shown in NSX UI",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional description of the group",
+          "maxLength": 1024
+        },
+        "criteria": {
+          "type": "array",
+          "description": "List of criteria blocks (OR relationship between blocks)",
+          "items": {
+            "$ref": "#/$defs/criteria"
+          }
+        },
+        "criteria_groups": {
+          "type": "array",
+          "description": "Complex criteria groups with explicit AND/OR conjunctions",
+          "items": {
+            "$ref": "#/$defs/criteriaGroup"
+          }
+        },
+        "member_groups": {
+          "type": "array",
+          "description": "Nested groups - list of group names or paths to include",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conjunction": {
+          "type": "string",
+          "description": "Operator for simple criteria blocks (deprecated - use criteria_groups)",
+          "enum": ["AND", "OR"]
+        },
+        "extended_criteria": {
+          "type": "array",
+          "description": "Extended criteria for identity-based groups",
+          "items": {
+            "$ref": "#/$defs/extendedCriteria"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "NSX tags to apply to this group",
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        }
+      }
+    },
+    "criteria": {
+      "type": "object",
+      "description": "A criteria block containing conditions or expressions",
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "description": "List of conditions (AND relationship within a criteria block)",
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "ip_addresses": {
+          "type": "array",
+          "description": "IP addresses or CIDR blocks",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mac_addresses": {
+          "type": "array",
+          "description": "MAC addresses",
+          "items": {
+            "type": "string",
+            "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "description": "NSX object paths",
+          "items": {
+            "type": "string",
+            "pattern": "^/"
+          }
+        },
+        "external_ids": {
+          "type": "array",
+          "description": "External IDs for cloud-managed VMs",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "criteriaGroup": {
+      "type": "object",
+      "description": "A criteria group with explicit conjunction control",
+      "additionalProperties": false,
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "description": "List of criteria in this group",
+          "items": {
+            "$ref": "#/$defs/criteria"
+          }
+        },
+        "conjunction_with_next": {
+          "type": "string",
+          "description": "Conjunction operator to apply between this group and the next",
+          "enum": ["AND", "OR"],
+          "default": "OR"
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "description": "A membership condition",
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Condition key - Tag, Name, OSName, or ComputerName",
+          "enum": ["Tag", "Name", "OSName", "ComputerName"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Alternative to key - condition type",
+          "enum": ["Tag", "Name", "OSName", "ComputerName", "os_name", "computer_name"]
+        },
+        "member_type": {
+          "type": "string",
+          "description": "Type of member this condition applies to",
+          "enum": ["VirtualMachine", "Segment", "SegmentPort", "IPSet", "LogicalPort", "LogicalSwitch"],
+          "default": "VirtualMachine"
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator",
+          "enum": ["EQUALS", "CONTAINS", "STARTSWITH", "ENDSWITH", "NOTEQUALS"],
+          "default": "EQUALS"
+        },
+        "value": {
+          "type": "string",
+          "description": "Value to match (for Tag: use 'value|scope' format)"
+        }
+      }
+    },
+    "extendedCriteria": {
+      "type": "object",
+      "description": "Extended criteria for identity-based groups",
+      "additionalProperties": false,
+      "properties": {
+        "identity_groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identityGroup"
+          }
+        }
+      }
+    },
+    "identityGroup": {
+      "type": "object",
+      "description": "Identity group membership",
+      "required": ["distinguished_name", "domain_base_distinguished_name"],
+      "additionalProperties": false,
+      "properties": {
+        "distinguished_name": {
+          "type": "string",
+          "description": "AD distinguished name"
+        },
+        "domain_base_distinguished_name": {
+          "type": "string",
+          "description": "AD domain base DN"
+        },
+        "sid": {
+          "type": "string",
+          "description": "Security Identifier"
+        }
+      }
+    },
+    "tag": {
+      "type": "object",
+      "description": "NSX tag",
+      "required": ["tag"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Tag scope (optional)",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag value",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}
