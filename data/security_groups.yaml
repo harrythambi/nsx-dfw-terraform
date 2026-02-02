@@ -1,0 +1,103 @@
+# =============================================================================
+# NSX-T Security Groups Configuration
+# =============================================================================
+# This file defines security groups using various criteria types.
+# Order is preserved - groups are created in the order defined here.
+# =============================================================================
+
+security_groups:
+  # -------------------------------------------------------------------------
+  # Example: Tag-based group
+  # -------------------------------------------------------------------------
+  - name: web-servers
+    display_name: "Web Servers"
+    description: "All web server VMs"
+    criteria:
+      - conditions:
+          - key: Tag
+            member_type: VirtualMachine
+            operator: EQUALS
+            value: "web|tier"
+
+  # -------------------------------------------------------------------------
+  # Example: IP Address-based group
+  # -------------------------------------------------------------------------
+  - name: trusted-networks
+    display_name: "Trusted Networks"
+    description: "Trusted IP ranges"
+    criteria:
+      - ip_addresses:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+  # -------------------------------------------------------------------------
+  # Example: Segment-based group
+  # -------------------------------------------------------------------------
+  - name: prod-segment-vms
+    display_name: "Production Segment VMs"
+    description: "VMs on production segments"
+    criteria:
+      - conditions:
+          - key: Tag
+            member_type: Segment
+            operator: EQUALS
+            value: "production|environment"
+
+  # -------------------------------------------------------------------------
+  # Example: Multiple criteria with conjunction
+  # -------------------------------------------------------------------------
+  - name: db-servers
+    display_name: "Database Servers"
+    description: "Database servers in production"
+    criteria:
+      - conditions:
+          - key: Tag
+            member_type: VirtualMachine
+            operator: EQUALS
+            value: "database|tier"
+      - conditions:
+          - key: Tag
+            member_type: VirtualMachine
+            operator: EQUALS
+            value: "production|environment"
+    conjunction: "OR"
+
+  # -------------------------------------------------------------------------
+  # Example: Name-based group
+  # -------------------------------------------------------------------------
+  - name: app-servers
+    display_name: "Application Servers"
+    description: "VMs with app in the name"
+    criteria:
+      - conditions:
+          - key: Name
+            member_type: VirtualMachine
+            operator: CONTAINS
+            value: "app"
+
+  # -------------------------------------------------------------------------
+  # Example: Mixed criteria (Path expression)
+  # -------------------------------------------------------------------------
+  - name: specific-vms
+    display_name: "Specific VMs"
+    description: "Specific VMs by path"
+    criteria:
+      - paths:
+          - "/infra/domains/default/groups/existing-group"
+
+  # -------------------------------------------------------------------------
+  # Example: Group with tags
+  # -------------------------------------------------------------------------
+  - name: external-services
+    display_name: "External Services"
+    description: "External service endpoints"
+    criteria:
+      - ip_addresses:
+          - "8.8.8.8"
+          - "8.8.4.4"
+    tags:
+      - scope: "managed-by"
+        tag: "terraform"
+      - scope: "environment"
+        tag: "production"

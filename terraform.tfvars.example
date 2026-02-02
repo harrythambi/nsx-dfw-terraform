@@ -1,0 +1,38 @@
+# =============================================================================
+# NSX-T DFW Terraform Configuration Example
+# =============================================================================
+# Copy this file to terraform.tfvars and update with your values
+# =============================================================================
+
+# NSX-T Manager Connection
+nsx_manager_host       = "nsx-manager.example.com"
+nsx_username           = "admin"
+nsx_password           = "your-password-here"
+nsx_allow_unverified_ssl = true
+
+# Data file paths (YAML or JSON)
+security_groups_file    = "data/security_groups.yaml"
+services_file           = "data/services.yaml"
+security_policies_file  = "data/security_policies.yaml"
+
+# Domain configuration
+domain     = "default"
+project_id = null  # Set for multitenancy
+
+# Sequence number configuration
+policy_sequence_start     = 1000
+policy_sequence_increment = 10
+rule_sequence_start       = 100
+rule_sequence_increment   = 10
+
+# Default tags for all resources
+default_tags = [
+  {
+    scope = "managed-by"
+    tag   = "terraform"
+  },
+  {
+    scope = "project"
+    tag   = "nsx-dfw"
+  }
+]

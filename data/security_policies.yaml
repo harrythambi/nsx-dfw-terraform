@@ -1,0 +1,198 @@
+# =============================================================================
+# NSX-T Security Policies Configuration
+# =============================================================================
+# This file defines security policies and their rules.
+# - Policy order is preserved - policies are created in definition order
+# - Rule order within each policy is preserved
+# - Sequence numbers are auto-calculated if not provided
+# - You can reference groups/services by name (defined in other YAML files)
+#   or use full NSX paths directly
+# =============================================================================
+
+security_policies:
+  # -------------------------------------------------------------------------
+  # Emergency Policy - Highest Priority
+  # -------------------------------------------------------------------------
+  - name: emergency-policy
+    display_name: "Emergency Policy"
+    description: "Emergency access rules - highest priority"
+    category: Emergency
+    stateful: true
+    tcp_strict: false
+    locked: false
+    rules:
+      - display_name: "Allow Emergency Admin Access"
+        description: "Emergency administrative access"
+        action: ALLOW
+        source_groups:
+          - trusted-networks  # Reference to group defined in security_groups.yaml
+        destination_groups: []  # Empty = Any
+        services: []  # Empty = Any
+        logged: true
+        direction: IN_OUT
+
+  # -------------------------------------------------------------------------
+  # Infrastructure Policy
+  # -------------------------------------------------------------------------
+  - name: infrastructure-policy
+    display_name: "Infrastructure Services Policy"
+    description: "Core infrastructure service rules"
+    category: Infrastructure
+    stateful: true
+    rules:
+      - display_name: "Allow DNS"
+        action: ALLOW
+        source_groups: []
+        destination_groups:
+          - "/infra/domains/default/groups/dns-servers"  # Direct NSX path
+        services:
+          - "/infra/services/DNS"  # Predefined NSX service
+        logged: false
+
+      - display_name: "Allow NTP"
+        action: ALLOW
+        source_groups: []
+        destination_groups:
+          - "/infra/domains/default/groups/ntp-servers"
+        services:
+          - "/infra/services/NTP"
+        logged: false
+
+      - display_name: "Allow ICMP Ping"
+        action: ALLOW
+        source_groups: []
+        destination_groups: []
+        services:
+          - icmp-ping  # Reference to custom service
+        logged: false
+
+  # -------------------------------------------------------------------------
+  # Environment Policy
+  # -------------------------------------------------------------------------
+  - name: environment-policy
+    display_name: "Environment Isolation Policy"
+    description: "Environment isolation rules"
+    category: Environment
+    stateful: true
+    rules:
+      - display_name: "Block Prod to Dev"
+        description: "Prevent production from accessing development"
+        action: DROP
+        source_groups:
+          - prod-segment-vms
+        destination_groups:
+          - "/infra/domains/default/groups/dev-vms"
+        services: []
+        logged: true
+
+  # -------------------------------------------------------------------------
+  # Application Policy - Web Tier
+  # -------------------------------------------------------------------------
+  - name: web-tier-policy
+    display_name: "Web Tier Security Policy"
+    description: "Web tier access rules"
+    category: Application
+    stateful: true
+    tcp_strict: false
+    scope:
+      - web-servers  # Policy applies to web-servers group
+    rules:
+      - display_name: "Allow Inbound Web Traffic"
+        description: "Allow HTTP/HTTPS from anywhere"
+        action: ALLOW
+        source_groups: []
+        destination_groups:
+          - web-servers
+        services:
+          - web-services  # Reference to custom service
+        logged: true
+        direction: IN
+
+      - display_name: "Allow Web to App"
+        description: "Allow web servers to access app servers"
+        action: ALLOW
+        source_groups:
+          - web-servers
+        destination_groups:
+          - app-servers
+        services:
+          - custom-app
+        logged: false
+        direction: OUT
+
+  # -------------------------------------------------------------------------
+  # Application Policy - App Tier
+  # -------------------------------------------------------------------------
+  - name: app-tier-policy
+    display_name: "App Tier Security Policy"
+    description: "Application tier access rules"
+    category: Application
+    stateful: true
+    scope:
+      - app-servers
+    rules:
+      - display_name: "Allow App to Database"
+        description: "Allow app servers to access databases"
+        action: ALLOW
+        source_groups:
+          - app-servers
+        destination_groups:
+          - db-servers
+        services:
+          - database-services
+        logged: true
+
+      - display_name: "Allow App to External Services"
+        description: "Allow app servers to access external APIs"
+        action: ALLOW
+        source_groups:
+          - app-servers
+        destination_groups:
+          - external-services
+        services:
+          - web-services
+        logged: true
+        direction: OUT
+
+  # -------------------------------------------------------------------------
+  # Application Policy - Database Tier
+  # -------------------------------------------------------------------------
+  - name: db-tier-policy
+    display_name: "Database Tier Security Policy"
+    description: "Database tier access rules"
+    category: Application
+    stateful: true
+    scope:
+      - db-servers
+    rules:
+      - display_name: "Deny All Inbound to DB"
+        description: "Default deny all to database (explicit rule)"
+        action: DROP
+        source_groups: []
+        destination_groups:
+          - db-servers
+        sources_excluded: false
+        destinations_excluded: false
+        services: []
+        logged: true
+        notes: "Catch-all deny rule for database tier"
+
+  # -------------------------------------------------------------------------
+  # Default Application Policy
+  # -------------------------------------------------------------------------
+  - name: default-deny-policy
+    display_name: "Default Deny Policy"
+    description: "Default deny all traffic"
+    category: Application
+    stateful: true
+    # No sequence_number - will be auto-calculated
+    rules:
+      - display_name: "Default Deny All"
+        description: "Deny all traffic not explicitly allowed"
+        action: DROP
+        source_groups: []
+        destination_groups: []
+        services: []
+        logged: true
+        ip_version: IPV4_IPV6
+        notes: "Default deny rule - should be last in evaluation order"

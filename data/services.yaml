@@ -1,0 +1,137 @@
+# =============================================================================
+# NSX-T Services Configuration
+# =============================================================================
+# This file defines custom services with various entry types.
+# Order is preserved - services are created in the order defined here.
+# =============================================================================
+
+services:
+  # -------------------------------------------------------------------------
+  # Example: TCP/UDP Service (L4 Port Set)
+  # -------------------------------------------------------------------------
+  - name: web-services
+    display_name: "Web Services"
+    description: "HTTP and HTTPS ports"
+    l4_port_set_entries:
+      - display_name: "HTTP"
+        protocol: TCP
+        destination_ports:
+          - "80"
+      - display_name: "HTTPS"
+        protocol: TCP
+        destination_ports:
+          - "443"
+
+  # -------------------------------------------------------------------------
+  # Example: Database ports
+  # -------------------------------------------------------------------------
+  - name: database-services
+    display_name: "Database Services"
+    description: "Common database ports"
+    l4_port_set_entries:
+      - display_name: "MySQL"
+        protocol: TCP
+        destination_ports:
+          - "3306"
+      - display_name: "PostgreSQL"
+        protocol: TCP
+        destination_ports:
+          - "5432"
+      - display_name: "MongoDB"
+        protocol: TCP
+        destination_ports:
+          - "27017"
+      - display_name: "Redis"
+        protocol: TCP
+        destination_ports:
+          - "6379"
+
+  # -------------------------------------------------------------------------
+  # Example: ICMP Service
+  # -------------------------------------------------------------------------
+  - name: icmp-all
+    display_name: "ICMP All"
+    description: "All ICMP traffic"
+    icmp_entries:
+      - display_name: "ICMPv4 All"
+        protocol: ICMPv4
+      - display_name: "ICMPv6 All"
+        protocol: ICMPv6
+
+  # -------------------------------------------------------------------------
+  # Example: ICMP with specific types
+  # -------------------------------------------------------------------------
+  - name: icmp-ping
+    display_name: "ICMP Ping"
+    description: "ICMP echo request/reply only"
+    icmp_entries:
+      - display_name: "Echo Request"
+        protocol: ICMPv4
+        icmp_type: "8"
+      - display_name: "Echo Reply"
+        protocol: ICMPv4
+        icmp_type: "0"
+
+  # -------------------------------------------------------------------------
+  # Example: Custom application ports
+  # -------------------------------------------------------------------------
+  - name: custom-app
+    display_name: "Custom Application"
+    description: "Custom application service"
+    l4_port_set_entries:
+      - display_name: "App API"
+        protocol: TCP
+        destination_ports:
+          - "8080"
+          - "8443"
+      - display_name: "App Metrics"
+        protocol: TCP
+        destination_ports:
+          - "9090"
+
+  # -------------------------------------------------------------------------
+  # Example: Port range
+  # -------------------------------------------------------------------------
+  - name: ephemeral-ports
+    display_name: "Ephemeral Ports"
+    description: "High ports range"
+    l4_port_set_entries:
+      - display_name: "Ephemeral TCP"
+        protocol: TCP
+        destination_ports:
+          - "49152-65535"
+      - display_name: "Ephemeral UDP"
+        protocol: UDP
+        destination_ports:
+          - "49152-65535"
+
+  # -------------------------------------------------------------------------
+  # Example: ALG Service (FTP)
+  # -------------------------------------------------------------------------
+  - name: ftp-service
+    display_name: "FTP Service"
+    description: "FTP with ALG support"
+    algorithm_entries:
+      - display_name: "FTP"
+        algorithm: FTP
+        destination_port: "21"
+
+  # -------------------------------------------------------------------------
+  # Example: IP Protocol Service
+  # -------------------------------------------------------------------------
+  - name: gre-protocol
+    display_name: "GRE Protocol"
+    description: "GRE tunnel protocol"
+    ip_protocol_entries:
+      - display_name: "GRE"
+        protocol: 47
+
+  # -------------------------------------------------------------------------
+  # Example: EtherType Service
+  # -------------------------------------------------------------------------
+  - name: arp-service
+    display_name: "ARP Service"
+    description: "ARP protocol"
+    ether_type_entries:
+      - display_name: "ARP"
+        ether_type: 2054
