@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/example/nsx-dfw-terraform/schemas/services.schema.json",
+  "title": "NSX-T Services Configuration",
+  "description": "Schema for NSX-T services YAML configuration",
+  "type": "object",
+  "required": ["services"],
+  "properties": {
+    "services": {
+      "type": "array",
+      "description": "List of service definitions",
+      "items": {
+        "$ref": "#/$defs/service"
+      }
+    }
+  },
+  "$defs": {
+    "service": {
+      "type": "object",
+      "required": ["name", "display_name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for the service (used for references)",
+          "pattern": "^[a-z0-9][a-z0-9-_]*[a-z0-9]$|^[a-z0-9]$"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Display name shown in NSX UI",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional description of the service",
+          "maxLength": 1024
+        },
+        "l4_port_set_entries": {
+          "type": "array",
+          "description": "L4 port set (TCP/UDP) entries",
+          "items": {
+            "$ref": "#/$defs/l4PortSetEntry"
+          }
+        },
+        "icmp_entries": {
+          "type": "array",
+          "description": "ICMP service entries",
+          "items": {
+            "$ref": "#/$defs/icmpEntry"
+          }
+        },
+        "ip_protocol_entries": {
+          "type": "array",
+          "description": "IP protocol entries",
+          "items": {
+            "$ref": "#/$defs/ipProtocolEntry"
+          }
+        },
+        "igmp_entries": {
+          "type": "array",
+          "description": "IGMP service entries",
+          "items": {
+            "$ref": "#/$defs/igmpEntry"
+          }
+        },
+        "ether_type_entries": {
+          "type": "array",
+          "description": "EtherType service entries",
+          "items": {
+            "$ref": "#/$defs/etherTypeEntry"
+          }
+        },
+        "algorithm_entries": {
+          "type": "array",
+          "description": "ALG (Application Layer Gateway) service entries",
+          "items": {
+            "$ref": "#/$defs/algorithmEntry"
+          }
+        },
+        "nested_service_entries": {
+          "type": "array",
+          "description": "Nested service entries (references to other services)",
+          "items": {
+            "$ref": "#/$defs/nestedServiceEntry"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "NSX tags to apply to this service",
+          "items": {
+            "$ref": "#/$defs/tag"
+          }
+        }
+      }
+    },
+    "l4PortSetEntry": {
+      "type": "object",
+      "description": "L4 port set entry for TCP/UDP services",
+      "required": ["protocol", "destination_ports"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "protocol": {
+          "type": "string",
+          "description": "Protocol - TCP or UDP",
+          "enum": ["TCP", "UDP"]
+        },
+        "destination_ports": {
+          "type": "array",
+          "description": "Destination ports (single ports or ranges like '80' or '1024-2048')",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]+(-[0-9]+)?$"
+          }
+        },
+        "source_ports": {
+          "type": "array",
+          "description": "Source ports (optional)",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]+(-[0-9]+)?$"
+          }
+        }
+      }
+    },
+    "icmpEntry": {
+      "type": "object",
+      "description": "ICMP service entry",
+      "required": ["protocol"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "protocol": {
+          "type": "string",
+          "description": "ICMP protocol version",
+          "enum": ["ICMPv4", "ICMPv6"]
+        },
+        "icmp_type": {
+          "type": "string",
+          "description": "ICMP type (optional - omit for all types)",
+          "pattern": "^[0-9]+$"
+        },
+        "icmp_code": {
+          "type": "string",
+          "description": "ICMP code (optional)",
+          "pattern": "^[0-9]+$"
+        }
+      }
+    },
+    "ipProtocolEntry": {
+      "type": "object",
+      "description": "IP protocol entry",
+      "required": ["protocol"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "protocol": {
+          "type": "integer",
+          "description": "IP protocol number (e.g., 47 for GRE, 50 for ESP)",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "igmpEntry": {
+      "type": "object",
+      "description": "IGMP service entry",
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        }
+      }
+    },
+    "etherTypeEntry": {
+      "type": "object",
+      "description": "EtherType service entry",
+      "required": ["ether_type"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "ether_type": {
+          "type": "integer",
+          "description": "EtherType number (e.g., 2054 for ARP, 2048 for IPv4)",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "algorithmEntry": {
+      "type": "object",
+      "description": "ALG service entry",
+      "required": ["algorithm", "destination_port"],
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "algorithm": {
+          "type": "string",
+          "description": "ALG algorithm type",
+          "enum": ["FTP", "TFTP", "ORACLE_TNS", "SUN_RPC_TCP", "SUN_RPC_UDP", "MS_RPC_TCP", "MS_RPC_UDP", "NBNS_BROADCAST", "NBDG_BROADCAST"]
+        },
+        "destination_port": {
+          "type": "string",
+          "description": "Destination port",
+          "pattern": "^[0-9]+$"
+        },
+        "source_ports": {
+          "type": "array",
+          "description": "Source ports (optional)",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]+(-[0-9]+)?$"
+          }
+        }
+      }
+    },
+    "nestedServiceEntry": {
+      "type": "object",
+      "description": "Nested service entry referencing another service",
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name for this entry"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entry"
+        },
+        "nested_service_path": {
+          "type": "string",
+          "description": "Full NSX path to the nested service",
+          "pattern": "^/"
+        },
+        "service_name": {
+          "type": "string",
+          "description": "Name of service to reference (will be resolved to path)"
+        }
+      }
+    },
+    "tag": {
+      "type": "object",
+      "description": "NSX tag",
+      "required": ["tag"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Tag scope (optional)",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag value",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

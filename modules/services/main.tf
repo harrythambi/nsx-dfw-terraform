@@ -1,9 +1,141 @@
 # =============================================================================
 # NSX-T Services (nsxt_policy_service)
 # =============================================================================
+# Supports:
+# - L4 Port Set entries (TCP/UDP)
+# - ICMP entries
+# - IP Protocol entries
+# - IGMP entries
+# - EtherType entries
+# - Algorithm entries (ALG services like FTP)
+# - Nested service entries (reference other services by name or path)
+# - Predefined NSX service lookup
+# =============================================================================
+
+locals {
+  # Common predefined NSX services - map friendly names to NSX paths
+  predefined_service_paths = {
+    # Core network services
+    "DNS"        = "/infra/services/DNS"
+    "DNS-UDP"    = "/infra/services/DNS-UDP"
+    "NTP"        = "/infra/services/NTP"
+    "DHCP-Server" = "/infra/services/DHCP-Server"
+    "DHCP-Client" = "/infra/services/DHCP-Client"
+
+    # Web services
+    "HTTP"       = "/infra/services/HTTP"
+    "HTTPS"      = "/infra/services/HTTPS"
+
+    # Remote access
+    "SSH"        = "/infra/services/SSH"
+    "RDP"        = "/infra/services/RDP"
+    "Telnet"     = "/infra/services/Telnet"
+
+    # File transfer
+    "FTP"        = "/infra/services/FTP"
+    "TFTP"       = "/infra/services/TFTP"
+    "SCP"        = "/infra/services/SCP"
+    "SFTP"       = "/infra/services/SFTP"
+
+    # Email services
+    "SMTP"       = "/infra/services/SMTP"
+    "SMTP_TLS"   = "/infra/services/SMTP_TLS"
+    "POP3"       = "/infra/services/POP3"
+    "POP3S"      = "/infra/services/POP3S"
+    "IMAP"       = "/infra/services/IMAP"
+    "IMAPS"      = "/infra/services/IMAPS"
+
+    # Database services
+    "MySQL"      = "/infra/services/MySQL"
+    "MS-SQL-S"   = "/infra/services/MS-SQL-S"
+    "Oracle-SQL" = "/infra/services/Oracle-SQL-Net"
+
+    # Directory services
+    "LDAP"       = "/infra/services/LDAP"
+    "LDAPS"      = "/infra/services/LDAPS"
+    "AD-Server"  = "/infra/services/AD-Server"
+    "Kerberos"   = "/infra/services/Kerberos"
+
+    # Windows services
+    "WINS"       = "/infra/services/WINS"
+    "SMB"        = "/infra/services/SMB"
+    "NBNS-UDP"   = "/infra/services/NBNS-UDP"
+    "NBNS-TCP"   = "/infra/services/NBNS-TCP"
+    "NBDG-TCP"   = "/infra/services/NBDG-TCP"
+    "NBDG-UDP"   = "/infra/services/NBDG-UDP"
+    "NBSS"       = "/infra/services/NBSS"
+
+    # Monitoring and management
+    "SNMP"       = "/infra/services/SNMP"
+    "SNMP-Trap"  = "/infra/services/SNMP-Trap"
+    "Syslog-UDP" = "/infra/services/Syslog-UDP"
+    "Syslog-TCP" = "/infra/services/Syslog-TCP"
+
+    # ICMP
+    "ICMP-ALL"   = "/infra/services/ICMP-ALL"
+    "ICMPv6-ALL" = "/infra/services/ICMPv6-ALL"
+    "ICMP Echo"  = "/infra/services/ICMP_Echo_Reply"
+
+    # VPN
+    "IKE"        = "/infra/services/IKE"
+    "IPSEC-ESP"  = "/infra/services/IPSEC-ESP"
+    "IPSEC-AH"   = "/infra/services/IPSEC-AH"
+    "L2TP"       = "/infra/services/L2TP"
+    "PPTP"       = "/infra/services/PPTP"
+
+    # Virtualization
+    "vMotion"    = "/infra/services/vMotion"
+    "vSphere-Client" = "/infra/services/vSphere-Client"
+
+    # Other common services
+    "Radius"     = "/infra/services/RADIUS"
+    "Radius-Accounting" = "/infra/services/RADIUS-Accounting"
+    "TACACS+"    = "/infra/services/TACACS+"
+  }
+
+  # Process services to resolve nested service references
+  processed_services = {
+    for name, svc in var.services : name => merge(
+      svc,
+      {
+        # Process nested_service_entries to resolve references
+        resolved_nested_entries = lookup(svc, "nested_service_entries", null) != null ? [
+          for entry in svc.nested_service_entries : merge(
+            entry,
+            {
+              resolved_path = (
+                # Check if path is already provided
+                lookup(entry, "nested_service_path", null) != null ? entry.nested_service_path :
+                # Check if service_name is provided - resolve it
+                lookup(entry, "service_name", null) != null ? (
+                  # First check local services
+                  lookup(var.service_path_lookup, entry.service_name, null) != null ?
+                    var.service_path_lookup[entry.service_name] :
+                  # Then check predefined services
+                  lookup(local.predefined_service_paths, entry.service_name, null) != null ?
+                    local.predefined_service_paths[entry.service_name] :
+                  # Otherwise assume it's a path or will be created
+                  can(regex("^/", entry.service_name)) ? entry.service_name :
+                    "/infra/services/${entry.service_name}"
+                ) : null
+              )
+            }
+          )
+        ] : []
+      }
+    )
+  }
+}
+
+# Data source for predefined services - enables validation that they exist
+data "nsxt_policy_service" "predefined" {
+  for_each = toset(var.predefined_services_to_lookup)
+
+  display_name = each.value
+}
 
 resource "nsxt_policy_service" "this" {
-  for_each = var.services
+  for_each = local.processed_services
 
   display_name = each.value.display_name
   description  = lookup(each.value, "description", null)
@@ -65,24 +197,25 @@ resource "nsxt_policy_service" "this" {
   dynamic "algorithm_entry" {
     for_each = lookup(each.value, "algorithm_entries", [])
     content {
-      display_name      = lookup(algorithm_entry.value, "display_name", null)
-      description       = lookup(algorithm_entry.value, "description", null)
-      algorithm         = algorithm_entry.value.algorithm
-      destination_port  = algorithm_entry.value.destination_port
-      source_ports      = lookup(algorithm_entry.value, "source_ports", null)
+      display_name     = lookup(algorithm_entry.value, "display_name", null)
+      description      = lookup(algorithm_entry.value, "description", null)
+      algorithm        = algorithm_entry.value.algorithm
+      destination_port = algorithm_entry.value.destination_port
+      source_ports     = lookup(algorithm_entry.value, "source_ports", null)
     }
   }
 
-  # Nested Service Entry (for service groups)
+  # Nested Service Entry (for service groups referencing other services)
   dynamic "nested_service_entry" {
-    for_each = lookup(each.value, "nested_service_entries", [])
+    for_each = each.value.resolved_nested_entries
     content {
-      display_name         = lookup(nested_service_entry.value, "display_name", null)
-      description          = lookup(nested_service_entry.value, "description", null)
-      nested_service_path  = nested_service_entry.value.nested_service_path
+      display_name        = lookup(nested_service_entry.value, "display_name", null)
+      description         = lookup(nested_service_entry.value, "description", null)
+      nested_service_path = nested_service_entry.value.resolved_path
     }
   }
 
+  # Tags
   dynamic "tag" {
     for_each = concat(var.default_tags, lookup(each.value, "tags", []))
     content {
@@ -91,6 +224,7 @@ resource "nsxt_policy_service" "this" {
     }
   }
 
+  # Project context for multitenancy
   dynamic "context" {
     for_each = var.project_id != null ? [1] : []
     content {

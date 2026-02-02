@@ -34,3 +34,9 @@ variable "tolerate_partial_success" {
   type        = bool
   default     = false
 }
+
+variable "group_path_lookup" {
+  description = "Map of group names to paths for resolving member_groups references"
+  type        = map(string)
+  default     = {}
+}
