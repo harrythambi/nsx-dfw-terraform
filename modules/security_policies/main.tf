@@ -190,7 +190,7 @@ resource "nsxt_policy_security_policy" "this" {
       source_groups = (
         lookup(rule.value, "source_groups", null) == null ||
         length(lookup(rule.value, "source_groups", [])) == 0 ||
-        (length(lookup(rule.value, "source_groups", [])) == 1 && upper(lookup(rule.value, "source_groups", [""])[0]) == "ANY")
+        try(length(rule.value.source_groups) == 1 && upper(rule.value.source_groups[0]) == "ANY", false)
         ) ? null : [
         for g in rule.value.source_groups : (
           upper(g) == "ANY" ? g :
@@ -206,7 +206,7 @@ resource "nsxt_policy_security_policy" "this" {
       destination_groups = (
         lookup(rule.value, "destination_groups", null) == null ||
         length(lookup(rule.value, "destination_groups", [])) == 0 ||
-        (length(lookup(rule.value, "destination_groups", [])) == 1 && upper(lookup(rule.value, "destination_groups", [""])[0]) == "ANY")
+        try(length(rule.value.destination_groups) == 1 && upper(rule.value.destination_groups[0]) == "ANY", false)
         ) ? null : [
         for g in rule.value.destination_groups : (
           upper(g) == "ANY" ? g :
@@ -223,7 +223,7 @@ resource "nsxt_policy_security_policy" "this" {
       services = (
         lookup(rule.value, "services", null) == null ||
         length(lookup(rule.value, "services", [])) == 0 ||
-        (length(lookup(rule.value, "services", [])) == 1 && upper(lookup(rule.value, "services", [""])[0]) == "ANY")
+        try(length(rule.value.services) == 1 && upper(rule.value.services[0]) == "ANY", false)
         ) ? null : [
         for s in rule.value.services : (
           upper(s) == "ANY" ? s :
