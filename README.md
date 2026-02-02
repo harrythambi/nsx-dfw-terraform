@@ -204,56 +204,54 @@ security_groups:
 
 #### Static Members
 
-In addition to dynamic criteria, you can add static members directly by path. This corresponds to the "Members" tab in the NSX UI.
+In addition to dynamic criteria, you can add static members by **display name**. This corresponds to the "Members" tab in the NSX UI. The module automatically looks up objects by display name and resolves them to NSX paths.
 
 ```yaml
 security_groups:
-  # Static member selection
+  # Static member selection using display names
   - name: selected-resources
     display_name: "Selected Resources"
     description: "Manually selected VMs and segments"
     members:
-      # Virtual Machines (from NSX Inventory)
+      # Virtual Machines - use VM display name (from NSX Inventory)
       virtual_machines:
-        - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-123"
-        - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-456"
+        - "web-server-01"        # VM display name
+        - "web-server-02"        # Module looks up path automatically
+        - "app-server-01"
 
-      # NSX Segments
+      # NSX Segments - use segment display name
       segments:
-        - "/infra/segments/web-segment"
-        - "/infra/segments/app-segment"
+        - "Web-Segment"          # Segment display name
+        - "App-Segment"
 
-      # Segment Ports
-      segment_ports:
-        - "/infra/segments/web-segment/ports/port-001"
-
-      # Nested Groups (by name or path)
+      # Nested Groups - use group name
       groups:
-        - web-servers                    # Reference by name
-        - "/infra/domains/default/groups/existing-group"  # Or by path
+        - web-servers            # Reference group defined in this config
+        - "Existing-Group"       # Or existing group's display name
 
-      # Additional member types
+      # These still require paths:
+      # segment_ports: []
       # vifs: []
       # physical_servers: []
       # distributed_port_groups: []
       # distributed_ports: []
 ```
 
-| Member Type | Description | Path Format |
-|-------------|-------------|-------------|
-| `virtual_machines` | Virtual machines | `/infra/realized-state/enforcement-points/default/virtual-machines/<vm-id>` |
-| `segments` | NSX segments | `/infra/segments/<segment-name>` |
-| `segment_ports` | Segment ports | `/infra/segments/<segment>/ports/<port-id>` |
-| `groups` | Nested security groups | Name or `/infra/domains/<domain>/groups/<group-name>` |
-| `vifs` | Virtual interfaces | VIF paths |
-| `physical_servers` | Physical servers | Physical server paths |
-| `distributed_port_groups` | vSphere DPGs | DPG paths |
-| `distributed_ports` | vSphere distributed ports | Distributed port paths |
+| Member Type | Input Format | Resolution |
+|-------------|--------------|------------|
+| `virtual_machines` | VM display name | Looked up via `nsxt_policy_vm` data source |
+| `segments` | Segment display name | Looked up via `nsxt_policy_segment` data source |
+| `groups` | Group name or display name | Looked up via `nsxt_policy_group` data source |
+| `segment_ports` | Full path required | Direct path |
+| `vifs` | Full path required | Direct path |
+| `physical_servers` | Full path required | Direct path |
+| `distributed_port_groups` | Full path required | Direct path |
+| `distributed_ports` | Full path required | Direct path |
 
-**Finding Object Paths:**
-- **VMs**: NSX Manager → Inventory → Virtual Machines → Select VM → Copy path from URL/API
-- **Segments**: NSX Manager → Networking → Segments → Use segment ID
-- **Groups**: NSX Manager → Inventory → Groups → Use group name or path
+**Finding Display Names:**
+- **VMs**: NSX Manager → Inventory → Virtual Machines → Use the name shown in the list
+- **Segments**: NSX Manager → Networking → Segments → Use the segment name
+- **Groups**: NSX Manager → Inventory → Groups → Use the group name
 
 ### Services
 
@@ -471,22 +469,23 @@ Sequence numbers are auto-calculated within each category. Override with explici
     - string                # Group name or path
 
   # Static members (Members tab in NSX UI)
+  # Use display names - module resolves to paths automatically
   members:
-    virtual_machines:       # VM paths
+    virtual_machines:       # VM display names (looked up automatically)
       - string
-    segments:               # Segment paths
+    segments:               # Segment display names (looked up automatically)
       - string
-    segment_ports:          # Segment port paths
+    groups:                 # Group names or display names (looked up automatically)
       - string
-    groups:                 # Nested group names or paths
+    segment_ports:          # Segment port paths (still requires full path)
       - string
-    vifs:                   # VIF paths
+    vifs:                   # VIF paths (still requires full path)
       - string
-    physical_servers:       # Physical server paths
+    physical_servers:       # Physical server paths (still requires full path)
       - string
-    distributed_port_groups: # vSphere DPG paths
+    distributed_port_groups: # vSphere DPG paths (still requires full path)
       - string
-    distributed_ports:      # vSphere distributed port paths
+    distributed_ports:      # vSphere distributed port paths (still requires full path)
       - string
 
   # Identity-based (Active Directory)

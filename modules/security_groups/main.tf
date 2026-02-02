@@ -88,30 +88,130 @@ locals {
           )
         ] : []
 
-        # Process static members section
-        # Collects all member paths from the members block
+        # Collect member display names for data source lookups
+        # These will be resolved to paths via data sources
+        vm_members                     = lookup(lookup(group, "members", {}), "virtual_machines", [])
+        segment_members                = lookup(lookup(group, "members", {}), "segments", [])
+        segment_port_members           = lookup(lookup(group, "members", {}), "segment_ports", [])
+        group_members                  = lookup(lookup(group, "members", {}), "groups", [])
+        vif_members                    = lookup(lookup(group, "members", {}), "vifs", [])
+        physical_server_members        = lookup(lookup(group, "members", {}), "physical_servers", [])
+        distributed_port_group_members = lookup(lookup(group, "members", {}), "distributed_port_groups", [])
+        distributed_port_members       = lookup(lookup(group, "members", {}), "distributed_ports", [])
+      }
+    )
+  }
+
+  # ===========================================================================
+  # Collect all unique member names for data source lookups
+  # ===========================================================================
+
+  # Collect all VM display names that need to be looked up
+  all_vm_names = distinct(flatten([
+    for name, group in local.processed_groups : group.vm_members
+  ]))
+
+  # Collect all segment display names that need to be looked up
+  all_segment_names = distinct(flatten([
+    for name, group in local.processed_groups : group.segment_members
+  ]))
+
+  # Collect all group names that need to be looked up (excluding paths and locally defined groups)
+  all_external_group_names = distinct(flatten([
+    for name, group in local.processed_groups : [
+      for g in group.group_members : g
+      if !can(regex("^/", g)) && !contains(keys(var.group_path_lookup), g)
+    ]
+  ]))
+}
+
+# =============================================================================
+# Data Sources - Look up objects by display name
+# =============================================================================
+
+# Look up Virtual Machines by display name
+data "nsxt_policy_vm" "members" {
+  for_each = toset(local.all_vm_names)
+
+  display_name = each.value
+}
+
+# Look up Segments by display name
+data "nsxt_policy_segment" "members" {
+  for_each = toset(local.all_segment_names)
+
+  display_name = each.value
+}
+
+# Look up existing Groups by display name (for groups not defined in this config)
+data "nsxt_policy_group" "members" {
+  for_each = toset(local.all_external_group_names)
+
+  display_name = each.value
+  domain       = var.domain
+}
+
+# =============================================================================
+# Build lookup maps from display name to path
+# =============================================================================
+
+locals {
+  # VM display name to path lookup
+  vm_path_lookup = {
+    for name in local.all_vm_names : name => data.nsxt_policy_vm.members[name].path
+  }
+
+  # Segment display name to path lookup
+  segment_path_lookup = {
+    for name in local.all_segment_names : name => data.nsxt_policy_segment.members[name].path
+  }
+
+  # External group display name to path lookup
+  external_group_path_lookup = {
+    for name in local.all_external_group_names : name => data.nsxt_policy_group.members[name].path
+  }
+
+  # Combined group lookup: local groups + external groups
+  combined_group_lookup = merge(var.group_path_lookup, local.external_group_path_lookup)
+
+  # ===========================================================================
+  # Resolve member display names to paths for each group
+  # ===========================================================================
+  groups_with_resolved_members = {
+    for name, group in local.processed_groups : name => merge(
+      group,
+      {
+        # Resolve all static member paths
         static_member_paths = concat(
-          # Virtual Machines
-          lookup(lookup(group, "members", {}), "virtual_machines", []),
-          # Segments
-          lookup(lookup(group, "members", {}), "segments", []),
-          # Segment Ports
-          lookup(lookup(group, "members", {}), "segment_ports", []),
-          # VIFs
-          lookup(lookup(group, "members", {}), "vifs", []),
-          # Physical Servers
-          lookup(lookup(group, "members", {}), "physical_servers", []),
-          # Distributed Port Groups
-          lookup(lookup(group, "members", {}), "distributed_port_groups", []),
-          # Distributed Ports
-          lookup(lookup(group, "members", {}), "distributed_ports", []),
-          # Nested Groups (from members.groups)
+          # Virtual Machines - resolve display names to paths
+          [for vm in group.vm_members : local.vm_path_lookup[vm]],
+
+          # Segments - resolve display names to paths
+          [for seg in group.segment_members : local.segment_path_lookup[seg]],
+
+          # Segment Ports - keep as paths (format: segment_name/port_name)
+          # These are already expected to be paths or will need custom handling
+          group.segment_port_members,
+
+          # VIFs - keep as paths
+          group.vif_members,
+
+          # Physical Servers - keep as paths
+          group.physical_server_members,
+
+          # Distributed Port Groups - keep as paths
+          group.distributed_port_group_members,
+
+          # Distributed Ports - keep as paths
+          group.distributed_port_members,
+
+          # Groups - resolve names to paths
           [
-            for g in lookup(lookup(group, "members", {}), "groups", []) : (
-              can(regex("^/", g)) ? g : (
-                lookup(var.group_path_lookup, g, null) != null ? var.group_path_lookup[g] :
-                "/infra/domains/${var.domain}/groups/${g}"
-              )
+            for g in group.group_members : (
+              # If it's already a path, use it directly
+              can(regex("^/", g)) ? g :
+              # Look up in combined group lookup
+              lookup(local.combined_group_lookup, g, "/infra/domains/${var.domain}/groups/${g}")
             )
           ]
         )
@@ -124,7 +224,7 @@ locals {
 }
 
 resource "nsxt_policy_group" "this" {
-  for_each = local.processed_groups
+  for_each = local.groups_with_resolved_members
 
   display_name = each.value.display_name
   description  = lookup(each.value, "description", null)
@@ -141,7 +241,7 @@ resource "nsxt_policy_group" "this" {
       dynamic "condition" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
-          if (lookup(cond, "type", lookup(cond, "key", "Tag")) == "Tag" ||
+          if(lookup(cond, "type", lookup(cond, "key", "Tag")) == "Tag" ||
           (lookup(cond, "key", null) == "Tag" && lookup(cond, "type", null) == null)) &&
           !contains(["Segment", "SegmentPort"], lookup(cond, "member_type", "VirtualMachine"))
         ]
@@ -157,7 +257,7 @@ resource "nsxt_policy_group" "this" {
       dynamic "condition" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
-          if (lookup(cond, "type", lookup(cond, "key", "")) == "Name" ||
+          if(lookup(cond, "type", lookup(cond, "key", "")) == "Name" ||
           lookup(cond, "key", null) == "Name") &&
           !contains(["Segment", "SegmentPort"], lookup(cond, "member_type", "VirtualMachine"))
         ]

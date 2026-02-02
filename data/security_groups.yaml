@@ -77,68 +77,62 @@ security_groups:
             value: "app"
 
   # -------------------------------------------------------------------------
-  # Example: Static Members - Virtual Machines
-  # Note: Commented out - requires actual VM paths from your environment
-  # Get VM paths from: NSX Manager > Inventory > Virtual Machines
+  # Example: Static Members - Virtual Machines (by display name)
+  # Note: Commented out - requires VMs to exist in your NSX inventory
+  # The module looks up VMs by display name automatically
   # -------------------------------------------------------------------------
   # - name: specific-vms
   #   display_name: "Specific Virtual Machines"
-  #   description: "Manually selected VMs"
+  #   description: "Manually selected VMs by display name"
   #   members:
   #     virtual_machines:
-  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-123"
-  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-456"
+  #       - "web-server-01"      # VM display name (not path!)
+  #       - "web-server-02"      # Module resolves to path automatically
+  #       - "app-server-01"
 
   # -------------------------------------------------------------------------
-  # Example: Static Members - NSX Segments
-  # Note: Commented out - requires actual segment paths from your environment
+  # Example: Static Members - NSX Segments (by display name)
+  # Note: Commented out - requires segments to exist
   # -------------------------------------------------------------------------
   # - name: selected-segments
   #   display_name: "Selected Segments"
-  #   description: "Manually selected network segments"
+  #   description: "Manually selected network segments by display name"
   #   members:
   #     segments:
-  #       - "/infra/segments/web-segment"
-  #       - "/infra/segments/app-segment"
+  #       - "Web-Segment"        # Segment display name
+  #       - "App-Segment"        # Module resolves to path automatically
 
   # -------------------------------------------------------------------------
-  # Example: Static Members - Nested Groups
-  # Note: Commented out - requires existing groups
+  # Example: Static Members - Nested Groups (by name)
   # -------------------------------------------------------------------------
   # - name: combined-group
   #   display_name: "Combined Group"
-  #   description: "Group containing other groups"
+  #   description: "Group containing other groups by name"
   #   members:
   #     groups:
-  #       - web-servers           # Reference by name (defined above)
-  #       - app-servers           # Reference by name (defined above)
-  #       - "/infra/domains/default/groups/existing-group"  # Or by path
+  #       - web-servers          # Reference group defined in this file
+  #       - app-servers          # Reference group defined in this file
+  #       - "Existing-Group"     # Or reference existing group by display name
 
   # -------------------------------------------------------------------------
-  # Example: Static Members - Mixed Types
-  # Note: Commented out - requires actual paths from your environment
+  # Example: Static Members - Mixed Types (all by display name)
+  # Note: Commented out - requires objects to exist in your environment
   # -------------------------------------------------------------------------
   # - name: mixed-members
   #   display_name: "Mixed Static Members"
   #   description: "Group with various static member types"
   #   members:
   #     virtual_machines:
-  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-789"
+  #       - "db-server-01"       # VM display name
+  #       - "db-server-02"
   #     segments:
-  #       - "/infra/segments/db-segment"
-  #     segment_ports:
-  #       - "/infra/segments/web-segment/ports/port-001"
+  #       - "Database-Segment"   # Segment display name
   #     groups:
-  #       - web-servers
-  #     # Also supported:
-  #     # vifs: []
-  #     # physical_servers: []
-  #     # distributed_port_groups: []
-  #     # distributed_ports: []
+  #       - web-servers          # Group name from this config
+  #       - "External-Group"     # Existing group display name
 
   # -------------------------------------------------------------------------
   # Example: Combining Criteria and Static Members
-  # Note: Commented out - requires actual paths
   # -------------------------------------------------------------------------
   # - name: hybrid-group
   #   display_name: "Hybrid Group"
@@ -149,7 +143,7 @@ security_groups:
   #           value: "web|tier"
   #   members:
   #     virtual_machines:
-  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/special-vm"
+  #       - "special-vm-01"      # Add specific VM by display name
 
   # -------------------------------------------------------------------------
   # Example: Group with tags
