@@ -135,3 +135,29 @@ services:
     ether_type_entries:
       - display_name: "ARP"
         ether_type: 2054
+
+  # -------------------------------------------------------------------------
+  # Example: Nested Service Group (references other services)
+  # -------------------------------------------------------------------------
+  - name: all-web-services
+    display_name: "All Web Services"
+    description: "Combined web and custom app services"
+    nested_service_entries:
+      - display_name: "Web Services"
+        service_name: web-services
+      - display_name: "Custom App"
+        service_name: custom-app
+
+  # -------------------------------------------------------------------------
+  # Example: Nested Service Group with predefined services
+  # -------------------------------------------------------------------------
+  - name: standard-services
+    display_name: "Standard Network Services"
+    description: "Common network services bundle"
+    nested_service_entries:
+      - display_name: "DNS"
+        service_name: DNS
+      - display_name: "NTP"
+        service_name: NTP
+      - display_name: "ICMP"
+        service_name: icmp-all

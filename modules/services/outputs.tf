@@ -4,17 +4,23 @@
 
 output "service_paths" {
   description = "Map of service names to their NSX paths"
-  value       = { for k, v in nsxt_policy_service.this : k => v.path }
+  value = merge(
+    { for k, v in nsxt_policy_service.leaf : k => v.path },
+    { for k, v in nsxt_policy_service.nested : k => v.path }
+  )
 }
 
 output "service_ids" {
   description = "Map of service names to their IDs"
-  value       = { for k, v in nsxt_policy_service.this : k => v.id }
+  value = merge(
+    { for k, v in nsxt_policy_service.leaf : k => v.id },
+    { for k, v in nsxt_policy_service.nested : k => v.id }
+  )
 }
 
 output "services" {
   description = "Full service resources"
-  value       = nsxt_policy_service.this
+  value = merge(nsxt_policy_service.leaf, nsxt_policy_service.nested)
 }
 
 output "predefined_service_paths" {
@@ -25,7 +31,8 @@ output "predefined_service_paths" {
 output "all_service_paths" {
   description = "Combined map of custom and predefined service paths"
   value = merge(
-    { for k, v in nsxt_policy_service.this : k => v.path },
+    { for k, v in nsxt_policy_service.leaf : k => v.path },
+    { for k, v in nsxt_policy_service.nested : k => v.path },
     { for k, v in data.nsxt_policy_service.predefined : k => v.path }
   )
 }
