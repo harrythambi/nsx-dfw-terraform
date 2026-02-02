@@ -128,15 +128,27 @@ locals {
   # Identify services with nested references to local services
   # ===========================================================================
 
-  # For each service, identify which nested entries reference local services
+  # Extract service members from each service (supports both formats for backwards compatibility)
+  service_members = {
+    for name, svc in var.services : name => concat(
+      # New format: members.services (consistent with security groups)
+      lookup(lookup(svc, "members", {}), "services", []),
+      # Legacy format: nested_service_entries[].service_name
+      [
+        for entry in lookup(svc, "nested_service_entries", []) :
+        lookup(entry, "service_name", "")
+        if lookup(entry, "service_name", null) != null
+      ]
+    )
+  }
+
+  # For each service, identify which members reference local services
   services_with_local_refs = {
-    for name, svc in var.services : name => [
-      for entry in lookup(svc, "nested_service_entries", []) :
-      lookup(entry, "service_name", "")
-      if lookup(entry, "service_name", null) != null &&
-      !can(regex("^/", lookup(entry, "service_name", ""))) &&
-      contains(keys(var.services), lookup(entry, "service_name", "")) &&
-      !contains(keys(local.predefined_service_paths), lookup(entry, "service_name", ""))
+    for name, members in local.service_members : name => [
+      for svc_name in members : svc_name
+      if !can(regex("^/", svc_name)) &&
+      contains(keys(var.services), svc_name) &&
+      !contains(keys(local.predefined_service_paths), svc_name)
     ]
   }
 
@@ -160,30 +172,24 @@ locals {
     for name in local.leaf_service_names : name => merge(
       var.services[name],
       {
-        # Process nested_service_entries to resolve references (external/predefined only)
-        resolved_nested_entries = lookup(var.services[name], "nested_service_entries", null) != null ? [
-          for entry in var.services[name].nested_service_entries : merge(
-            entry,
-            {
-              resolved_path = (
-                # Check if path is already provided
-                lookup(entry, "nested_service_path", null) != null ? entry.nested_service_path :
-                # Check if service_name is provided - resolve it
-                lookup(entry, "service_name", null) != null ? (
-                  # First check external service_path_lookup
-                  lookup(var.service_path_lookup, entry.service_name, null) != null ?
-                  var.service_path_lookup[entry.service_name] :
-                  # Then check predefined services
-                  lookup(local.predefined_service_paths, entry.service_name, null) != null ?
-                  local.predefined_service_paths[entry.service_name] :
-                  # Otherwise assume it's a path
-                  can(regex("^/", entry.service_name)) ? entry.service_name :
-                  "/infra/services/${entry.service_name}"
-                ) : null
-              )
-            }
-          )
-        ] : []
+        # Resolve service members to paths (external/predefined only for leaf services)
+        resolved_service_paths = [
+          for svc_name in local.service_members[name] : {
+            name = svc_name
+            path = (
+              # Check if it's already a path
+              can(regex("^/", svc_name)) ? svc_name :
+              # Check external service_path_lookup
+              lookup(var.service_path_lookup, svc_name, null) != null ?
+              var.service_path_lookup[svc_name] :
+              # Check predefined services
+              lookup(local.predefined_service_paths, svc_name, null) != null ?
+              local.predefined_service_paths[svc_name] :
+              # Fallback to constructed path
+              "/infra/services/${svc_name}"
+            )
+          }
+        ]
       }
     )
   }
@@ -273,11 +279,10 @@ resource "nsxt_policy_service" "leaf" {
 
   # Nested Service Entry (for service groups referencing external/predefined services)
   dynamic "nested_service_entry" {
-    for_each = each.value.resolved_nested_entries
+    for_each = each.value.resolved_service_paths
     content {
-      display_name        = lookup(nested_service_entry.value, "display_name", null)
-      description         = lookup(nested_service_entry.value, "description", null)
-      nested_service_path = nested_service_entry.value.resolved_path
+      display_name        = nested_service_entry.value.name
+      nested_service_path = nested_service_entry.value.path
     }
   }
 
@@ -321,27 +326,21 @@ locals {
     for name in local.nested_service_names : name => merge(
       var.services[name],
       {
-        # Process nested_service_entries to resolve references (including local services)
-        resolved_nested_entries = lookup(var.services[name], "nested_service_entries", null) != null ? [
-          for entry in var.services[name].nested_service_entries : merge(
-            entry,
-            {
-              resolved_path = (
-                # Check if path is already provided
-                lookup(entry, "nested_service_path", null) != null ? entry.nested_service_path :
-                # Check if service_name is provided - resolve it
-                lookup(entry, "service_name", null) != null ? (
-                  # Look up in combined lookup (includes leaf services)
-                  lookup(local.combined_service_lookup, entry.service_name, null) != null ?
-                  local.combined_service_lookup[entry.service_name] :
-                  # Otherwise assume it's a path
-                  can(regex("^/", entry.service_name)) ? entry.service_name :
-                  "/infra/services/${entry.service_name}"
-                ) : null
-              )
-            }
-          )
-        ] : []
+        # Resolve service members to paths (including local leaf services)
+        resolved_service_paths = [
+          for svc_name in local.service_members[name] : {
+            name = svc_name
+            path = (
+              # Check if it's already a path
+              can(regex("^/", svc_name)) ? svc_name :
+              # Look up in combined lookup (includes leaf services)
+              lookup(local.combined_service_lookup, svc_name, null) != null ?
+              local.combined_service_lookup[svc_name] :
+              # Fallback to constructed path
+              "/infra/services/${svc_name}"
+            )
+          }
+        ]
       }
     )
   }
@@ -427,11 +426,10 @@ resource "nsxt_policy_service" "nested" {
 
   # Nested Service Entry (includes references to local leaf services)
   dynamic "nested_service_entry" {
-    for_each = each.value.resolved_nested_entries
+    for_each = each.value.resolved_service_paths
     content {
-      display_name        = lookup(nested_service_entry.value, "display_name", null)
-      description         = lookup(nested_service_entry.value, "description", null)
-      nested_service_path = nested_service_entry.value.resolved_path
+      display_name        = nested_service_entry.value.name
+      nested_service_path = nested_service_entry.value.path
     }
   }
 
