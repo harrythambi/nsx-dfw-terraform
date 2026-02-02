@@ -33,57 +33,61 @@ security_policies:
 
   # -------------------------------------------------------------------------
   # Infrastructure Policy
+  # Note: Commented out - references dns-servers and ntp-servers groups
+  #       that must exist in your NSX environment
   # -------------------------------------------------------------------------
-  - name: infrastructure-policy
-    display_name: "Infrastructure Services Policy"
-    description: "Core infrastructure service rules"
-    category: Infrastructure
-    stateful: true
-    rules:
-      - display_name: "Allow DNS"
-        action: ALLOW
-        source_groups: []
-        destination_groups:
-          - "/infra/domains/default/groups/dns-servers"  # Direct NSX path
-        services:
-          - "/infra/services/DNS"  # Predefined NSX service
-        logged: false
-
-      - display_name: "Allow NTP"
-        action: ALLOW
-        source_groups: []
-        destination_groups:
-          - "/infra/domains/default/groups/ntp-servers"
-        services:
-          - "/infra/services/NTP"
-        logged: false
-
-      - display_name: "Allow ICMP Ping"
-        action: ALLOW
-        source_groups: []
-        destination_groups: []
-        services:
-          - icmp-ping  # Reference to custom service
-        logged: false
+  # - name: infrastructure-policy
+  #   display_name: "Infrastructure Services Policy"
+  #   description: "Core infrastructure service rules"
+  #   category: Infrastructure
+  #   stateful: true
+  #   rules:
+  #     - display_name: "Allow DNS"
+  #       action: ALLOW
+  #       source_groups: []
+  #       destination_groups:
+  #         - "/infra/domains/default/groups/dns-servers"  # Direct NSX path
+  #       services:
+  #         - "/infra/services/DNS"  # Predefined NSX service
+  #       logged: false
+  #
+  #     - display_name: "Allow NTP"
+  #       action: ALLOW
+  #       source_groups: []
+  #       destination_groups:
+  #         - "/infra/domains/default/groups/ntp-servers"
+  #       services:
+  #         - "/infra/services/NTP"
+  #       logged: false
+  #
+  #     - display_name: "Allow ICMP Ping"
+  #       action: ALLOW
+  #       source_groups: []
+  #       destination_groups: []
+  #       services:
+  #         - icmp-ping  # Reference to custom service
+  #       logged: false
 
   # -------------------------------------------------------------------------
   # Environment Policy
+  # Note: Commented out - references dev-vms group that must exist in your
+  #       NSX environment
   # -------------------------------------------------------------------------
-  - name: environment-policy
-    display_name: "Environment Isolation Policy"
-    description: "Environment isolation rules"
-    category: Environment
-    stateful: true
-    rules:
-      - display_name: "Block Prod to Dev"
-        description: "Prevent production from accessing development"
-        action: DROP
-        source_groups:
-          - prod-segment-vms
-        destination_groups:
-          - "/infra/domains/default/groups/dev-vms"
-        services: []
-        logged: true
+  # - name: environment-policy
+  #   display_name: "Environment Isolation Policy"
+  #   description: "Environment isolation rules"
+  #   category: Environment
+  #   stateful: true
+  #   rules:
+  #     - display_name: "Block Prod to Dev"
+  #       description: "Prevent production from accessing development"
+  #       action: DROP
+  #       source_groups:
+  #         - prod-segment-vms
+  #       destination_groups:
+  #         - "/infra/domains/default/groups/dev-vms"
+  #       services: []
+  #       logged: true
 
   # -------------------------------------------------------------------------
   # Application Policy - Web Tier

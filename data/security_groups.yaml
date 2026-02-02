@@ -78,13 +78,14 @@ security_groups:
 
   # -------------------------------------------------------------------------
   # Example: Mixed criteria (Path expression)
+  # Note: Commented out - requires an existing group path in your NSX environment
   # -------------------------------------------------------------------------
-  - name: specific-vms
-    display_name: "Specific VMs"
-    description: "Specific VMs by path"
-    criteria:
-      - paths:
-          - "/infra/domains/default/groups/existing-group"
+  # - name: specific-vms
+  #   display_name: "Specific VMs"
+  #   description: "Specific VMs by path"
+  #   criteria:
+  #     - paths:
+  #         - "/infra/domains/default/groups/existing-group"
 
   # -------------------------------------------------------------------------
   # Example: Group with tags

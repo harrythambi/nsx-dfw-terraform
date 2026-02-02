@@ -77,12 +77,13 @@ resource "nsxt_policy_group" "this" {
       if !lookup(c, "_is_conjunction", false)
     ]
     content {
-      # VM Tag condition
+      # VM Tag condition (excludes Segment/SegmentPort which have their own blocks)
       dynamic "condition" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
-          if lookup(cond, "type", lookup(cond, "key", "Tag")) == "Tag" ||
-          (lookup(cond, "key", null) == "Tag" && lookup(cond, "type", null) == null)
+          if (lookup(cond, "type", lookup(cond, "key", "Tag")) == "Tag" ||
+          (lookup(cond, "key", null) == "Tag" && lookup(cond, "type", null) == null)) &&
+          !contains(["Segment", "SegmentPort"], lookup(cond, "member_type", "VirtualMachine"))
         ]
         content {
           key         = "Tag"
@@ -92,12 +93,13 @@ resource "nsxt_policy_group" "this" {
         }
       }
 
-      # VM Name condition
+      # VM Name condition (excludes Segment/SegmentPort which have their own blocks)
       dynamic "condition" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
-          if lookup(cond, "type", lookup(cond, "key", "")) == "Name" ||
-          lookup(cond, "key", null) == "Name"
+          if (lookup(cond, "type", lookup(cond, "key", "")) == "Name" ||
+          lookup(cond, "key", null) == "Name") &&
+          !contains(["Segment", "SegmentPort"], lookup(cond, "member_type", "VirtualMachine"))
         ]
         content {
           key         = "Name"
