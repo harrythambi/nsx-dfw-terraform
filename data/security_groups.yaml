@@ -1,162 +1,192 @@
 # =============================================================================
-# NSX-T Security Groups Configuration
-# =============================================================================
-# This file defines security groups using various criteria types.
-# Order is preserved - groups are created in the order defined here.
+# NSX-T Security Groups Configuration - Test All Scenarios
 # =============================================================================
 
 security_groups:
   # -------------------------------------------------------------------------
-  # Example: Tag-based group
+  # Test 1: Group with VM members (by display name)
   # -------------------------------------------------------------------------
-  - name: web-servers
-    display_name: "Web Servers"
-    description: "All web server VMs"
+  - name: vm-group-nas
+    display_name: "NAS Servers"
+    description: "NAS servers selected by VM display name"
+    members:
+      virtual_machines:
+        - "rod11-nas01"
+        - "rod11-nas02"
+
+  # -------------------------------------------------------------------------
+  # Test 2: Group with single VM member
+  # -------------------------------------------------------------------------
+  - name: vm-group-vcenter
+    display_name: "vCenter Server"
+    description: "vCenter server VM"
+    members:
+      virtual_machines:
+        - "rod11-vc01"
+
+  # -------------------------------------------------------------------------
+  # Test 3: Group with multiple VMs of different types
+  # -------------------------------------------------------------------------
+  - name: vm-group-management
+    display_name: "Management VMs"
+    description: "All management VMs"
+    members:
+      virtual_machines:
+        - "rod11-linmgmt01"
+        - "rod11-winmgmt01"
+        - "rod11-vc01"
+        - "rod11-vcd01"
+
+  # -------------------------------------------------------------------------
+  # Test 4: Group with NSX infrastructure VMs
+  # -------------------------------------------------------------------------
+  - name: vm-group-nsx
+    display_name: "NSX Infrastructure"
+    description: "NSX manager and edge VMs"
+    members:
+      virtual_machines:
+        - "rod11-nsx01"
+        - "rod11-nsx-en02"
+
+  # -------------------------------------------------------------------------
+  # Test 5: Group with segment members (by display name)
+  # -------------------------------------------------------------------------
+  - name: segment-group-tenant01
+    display_name: "Tenant01 Segments"
+    description: "All tenant01 segments"
+    members:
+      segments:
+        - "automation-tenant01-backend"
+        - "automation-tenant01-frontend"
+        - "automation-tenant01-mgmt"
+
+  # -------------------------------------------------------------------------
+  # Test 6: Group with tenant02 segments
+  # -------------------------------------------------------------------------
+  - name: segment-group-tenant02
+    display_name: "Tenant02 Segments"
+    description: "All tenant02 segments"
+    members:
+      segments:
+        - "automation-tenant02-backend"
+        - "automation-tenant02-frontend"
+        - "automation-tenant02-mgmt"
+
+  # -------------------------------------------------------------------------
+  # Test 7: Group with holodeck segments
+  # -------------------------------------------------------------------------
+  - name: segment-group-holodeck
+    display_name: "Holodeck Segments"
+    description: "Holodeck lab segments"
+    members:
+      segments:
+        - "holodeck-lab1-site-a-trunk"
+        - "holodeck-lab1-site-b-trunk"
+        - "holodeck-mgmt"
+
+  # -------------------------------------------------------------------------
+  # Test 8: Group with infrastructure segments
+  # -------------------------------------------------------------------------
+  - name: segment-group-infra
+    display_name: "Infrastructure Segments"
+    description: "Infrastructure network segments"
+    members:
+      segments:
+        - "rod11-avi-mgmt"
+        - "rod11-avi-se-data"
+        - "rod11-avn"
+
+  # -------------------------------------------------------------------------
+  # Test 9: Nested group - combining VM groups
+  # -------------------------------------------------------------------------
+  - name: nested-group-all-vms
+    display_name: "All VM Groups Combined"
+    description: "Nested group containing other VM groups"
+    members:
+      groups:
+        - vm-group-nas
+        - vm-group-management
+        - vm-group-nsx
+
+  # -------------------------------------------------------------------------
+  # Test 10: Nested group - combining segment groups
+  # -------------------------------------------------------------------------
+  - name: nested-group-all-segments
+    display_name: "All Segment Groups Combined"
+    description: "Nested group containing other segment groups"
+    members:
+      groups:
+        - segment-group-tenant01
+        - segment-group-tenant02
+        - segment-group-holodeck
+        - segment-group-infra
+
+  # -------------------------------------------------------------------------
+  # Test 11: Mixed members - VMs and Segments together
+  # -------------------------------------------------------------------------
+  - name: mixed-group-avi
+    display_name: "AVI Infrastructure"
+    description: "AVI-related VMs and segments"
+    members:
+      segments:
+        - "rod11-avi-mgmt"
+        - "rod11-avi-se-data"
+
+  # -------------------------------------------------------------------------
+  # Test 12: Mixed members - VMs, Segments, and Nested Groups
+  # -------------------------------------------------------------------------
+  - name: mixed-group-complete
+    display_name: "Complete Mixed Group"
+    description: "Group with VMs, segments, and nested groups"
+    members:
+      virtual_machines:
+        - "rod11-linmgmt01"
+      segments:
+        - "rod11-avn"
+      groups:
+        - vm-group-nas
+
+  # -------------------------------------------------------------------------
+  # Test 13: Hybrid - Dynamic criteria + Static members
+  # -------------------------------------------------------------------------
+  - name: hybrid-group-tagged-plus-static
+    display_name: "Hybrid Tagged and Static"
+    description: "Combines tag criteria with static VM members"
     criteria:
       - conditions:
           - key: Tag
             member_type: VirtualMachine
             operator: EQUALS
-            value: "web|tier"
+            value: "production|environment"
+    members:
+      virtual_machines:
+        - "rod11-vc01"
+        - "rod11-vcd01"
 
   # -------------------------------------------------------------------------
-  # Example: IP Address-based group
+  # Test 14: IP-based group (for comparison)
   # -------------------------------------------------------------------------
-  - name: trusted-networks
-    display_name: "Trusted Networks"
-    description: "Trusted IP ranges"
+  - name: ip-group-management
+    display_name: "Management Networks"
+    description: "IP-based management networks"
     criteria:
       - ip_addresses:
           - "10.0.0.0/8"
-          - "172.16.0.0/12"
           - "192.168.0.0/16"
 
   # -------------------------------------------------------------------------
-  # Example: Segment-based group
+  # Test 15: All VMs in environment
   # -------------------------------------------------------------------------
-  - name: prod-segment-vms
-    display_name: "Production Segment VMs"
-    description: "VMs on production segments"
-    criteria:
-      - conditions:
-          - key: Tag
-            member_type: Segment
-            operator: EQUALS
-            value: "production|environment"
-
-  # -------------------------------------------------------------------------
-  # Example: Multiple criteria with conjunction
-  # -------------------------------------------------------------------------
-  - name: db-servers
-    display_name: "Database Servers"
-    description: "Database servers in production"
-    criteria:
-      - conditions:
-          - key: Tag
-            member_type: VirtualMachine
-            operator: EQUALS
-            value: "database|tier"
-      - conditions:
-          - key: Tag
-            member_type: VirtualMachine
-            operator: EQUALS
-            value: "production|environment"
-    conjunction: "OR"
-
-  # -------------------------------------------------------------------------
-  # Example: Name-based group
-  # -------------------------------------------------------------------------
-  - name: app-servers
-    display_name: "Application Servers"
-    description: "VMs with app in the name"
-    criteria:
-      - conditions:
-          - key: Name
-            member_type: VirtualMachine
-            operator: CONTAINS
-            value: "app"
-
-  # -------------------------------------------------------------------------
-  # Example: Static Members - Virtual Machines (by display name)
-  # Note: Commented out - requires VMs to exist in your NSX inventory
-  # The module looks up VMs by display name automatically
-  # -------------------------------------------------------------------------
-  # - name: specific-vms
-  #   display_name: "Specific Virtual Machines"
-  #   description: "Manually selected VMs by display name"
-  #   members:
-  #     virtual_machines:
-  #       - "web-server-01"      # VM display name (not path!)
-  #       - "web-server-02"      # Module resolves to path automatically
-  #       - "app-server-01"
-
-  # -------------------------------------------------------------------------
-  # Example: Static Members - NSX Segments (by display name)
-  # Note: Commented out - requires segments to exist
-  # -------------------------------------------------------------------------
-  # - name: selected-segments
-  #   display_name: "Selected Segments"
-  #   description: "Manually selected network segments by display name"
-  #   members:
-  #     segments:
-  #       - "Web-Segment"        # Segment display name
-  #       - "App-Segment"        # Module resolves to path automatically
-
-  # -------------------------------------------------------------------------
-  # Example: Static Members - Nested Groups (by name)
-  # -------------------------------------------------------------------------
-  # - name: combined-group
-  #   display_name: "Combined Group"
-  #   description: "Group containing other groups by name"
-  #   members:
-  #     groups:
-  #       - web-servers          # Reference group defined in this file
-  #       - app-servers          # Reference group defined in this file
-  #       - "Existing-Group"     # Or reference existing group by display name
-
-  # -------------------------------------------------------------------------
-  # Example: Static Members - Mixed Types (all by display name)
-  # Note: Commented out - requires objects to exist in your environment
-  # -------------------------------------------------------------------------
-  # - name: mixed-members
-  #   display_name: "Mixed Static Members"
-  #   description: "Group with various static member types"
-  #   members:
-  #     virtual_machines:
-  #       - "db-server-01"       # VM display name
-  #       - "db-server-02"
-  #     segments:
-  #       - "Database-Segment"   # Segment display name
-  #     groups:
-  #       - web-servers          # Group name from this config
-  #       - "External-Group"     # Existing group display name
-
-  # -------------------------------------------------------------------------
-  # Example: Combining Criteria and Static Members
-  # -------------------------------------------------------------------------
-  # - name: hybrid-group
-  #   display_name: "Hybrid Group"
-  #   description: "Combines dynamic criteria with static members"
-  #   criteria:
-  #     - conditions:
-  #         - key: Tag
-  #           value: "web|tier"
-  #   members:
-  #     virtual_machines:
-  #       - "special-vm-01"      # Add specific VM by display name
-
-  # -------------------------------------------------------------------------
-  # Example: Group with tags
-  # -------------------------------------------------------------------------
-  - name: external-services
-    display_name: "External Services"
-    description: "External service endpoints"
-    criteria:
-      - ip_addresses:
-          - "8.8.8.8"
-          - "8.8.4.4"
-    tags:
-      - scope: "managed-by"
-        tag: "terraform"
-      - scope: "environment"
-        tag: "production"
+  - name: all-lab-vms
+    display_name: "All Lab VMs"
+    description: "Every VM in the lab environment"
+    members:
+      virtual_machines:
+        - "rod11-linmgmt01"
+        - "rod11-nas01"
+        - "rod11-nas02"
+        - "rod11-nsx-en02"
+        - "rod11-nsx01"
+        - "rod11-vc01"
+        - "rod11-vcd01"
+        - "rod11-winmgmt01"
