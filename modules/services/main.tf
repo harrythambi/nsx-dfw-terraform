@@ -8,122 +8,22 @@
 #   allowed or denied (as opposed to groups which define WHO).
 #
 # SERVICE ENTRY TYPES:
-#
-#   L4 Port Set (l4_port_set_entries):
-#     TCP/UDP port definitions. Supports single ports, multiple ports,
-#     and port ranges (e.g., "80", "8080-8090").
-#
-#   ICMP (icmp_entries):
-#     ICMP type and code definitions for ICMPv4 or ICMPv6.
-#     Common types: 0=Echo Reply, 8=Echo Request, 3=Dest Unreachable
-#
-#   IP Protocol (ip_protocol_entries):
-#     Raw IP protocol numbers for non-TCP/UDP protocols.
-#     Examples: 47=GRE, 50=ESP, 51=AH, 89=OSPF
-#
-#   IGMP (igmp_entries):
-#     Internet Group Management Protocol for multicast.
-#
-#   EtherType (ether_type_entries):
-#     Layer 2 protocol types by EtherType number.
-#     Examples: 2048=IPv4, 2054=ARP, 34525=IPv6
-#
-#   Algorithm (algorithm_entries):
-#     Application Layer Gateway (ALG) services that require
-#     deep packet inspection. Examples: FTP, TFTP, Oracle TNS.
-#
-#   Nested Service (nested_service_entries):
-#     Compose services by including other services.
-#     Reference by name or NSX path.
+#   - ports:              Simple "port/protocol" format (e.g., "80/tcp")
+#   - l4_port_set_entries: TCP/UDP port definitions (verbose format)
+#   - icmp_entries:       ICMP type and code definitions
+#   - ip_protocol_entries: Raw IP protocol numbers (e.g., 47=GRE)
+#   - igmp_entries:       IGMP for multicast
+#   - ether_type_entries: Layer 2 protocol types
+#   - algorithm_entries:  ALG services (FTP, TFTP, etc.)
+#   - members.services:   Nested service groups (reference other services)
 #
 # PREDEFINED SERVICES:
-#   NSX-T includes many predefined services (DNS, HTTP, SSH, etc.)
-#   that can be referenced directly in policies without defining them.
-#   This module maintains a lookup table of common predefined services.
+#   Reference any NSX predefined service by display name (e.g., "DNS", "HTTP").
+#   They are automatically looked up via data source - no hardcoding needed.
 #
 # =============================================================================
 
 locals {
-  # Common predefined NSX services - map friendly names to NSX paths
-  predefined_service_paths = {
-    # Core network services
-    "DNS"         = "/infra/services/DNS"
-    "DNS-UDP"     = "/infra/services/DNS-UDP"
-    "NTP"         = "/infra/services/NTP"
-    "DHCP-Server" = "/infra/services/DHCP-Server"
-    "DHCP-Client" = "/infra/services/DHCP-Client"
-
-    # Web services
-    "HTTP"  = "/infra/services/HTTP"
-    "HTTPS" = "/infra/services/HTTPS"
-
-    # Remote access
-    "SSH"    = "/infra/services/SSH"
-    "RDP"    = "/infra/services/RDP"
-    "Telnet" = "/infra/services/Telnet"
-
-    # File transfer
-    "FTP"  = "/infra/services/FTP"
-    "TFTP" = "/infra/services/TFTP"
-    "SCP"  = "/infra/services/SCP"
-    "SFTP" = "/infra/services/SFTP"
-
-    # Email services
-    "SMTP"     = "/infra/services/SMTP"
-    "SMTP_TLS" = "/infra/services/SMTP_TLS"
-    "POP3"     = "/infra/services/POP3"
-    "POP3S"    = "/infra/services/POP3S"
-    "IMAP"     = "/infra/services/IMAP"
-    "IMAPS"    = "/infra/services/IMAPS"
-
-    # Database services
-    "MySQL"      = "/infra/services/MySQL"
-    "MS-SQL-S"   = "/infra/services/MS-SQL-S"
-    "Oracle-SQL" = "/infra/services/Oracle-SQL-Net"
-
-    # Directory services
-    "LDAP"      = "/infra/services/LDAP"
-    "LDAPS"     = "/infra/services/LDAPS"
-    "AD-Server" = "/infra/services/AD-Server"
-    "Kerberos"  = "/infra/services/Kerberos"
-
-    # Windows services
-    "WINS"     = "/infra/services/WINS"
-    "SMB"      = "/infra/services/SMB"
-    "NBNS-UDP" = "/infra/services/NBNS-UDP"
-    "NBNS-TCP" = "/infra/services/NBNS-TCP"
-    "NBDG-TCP" = "/infra/services/NBDG-TCP"
-    "NBDG-UDP" = "/infra/services/NBDG-UDP"
-    "NBSS"     = "/infra/services/NBSS"
-
-    # Monitoring and management
-    "SNMP"       = "/infra/services/SNMP"
-    "SNMP-Trap"  = "/infra/services/SNMP-Trap"
-    "Syslog-UDP" = "/infra/services/Syslog-UDP"
-    "Syslog-TCP" = "/infra/services/Syslog-TCP"
-
-    # ICMP
-    "ICMP-ALL"   = "/infra/services/ICMP-ALL"
-    "ICMPv6-ALL" = "/infra/services/ICMPv6-ALL"
-    "ICMP Echo"  = "/infra/services/ICMP_Echo_Reply"
-
-    # VPN
-    "IKE"       = "/infra/services/IKE"
-    "IPSEC-ESP" = "/infra/services/IPSEC-ESP"
-    "IPSEC-AH"  = "/infra/services/IPSEC-AH"
-    "L2TP"      = "/infra/services/L2TP"
-    "PPTP"      = "/infra/services/PPTP"
-
-    # Virtualization
-    "vMotion"        = "/infra/services/vMotion"
-    "vSphere-Client" = "/infra/services/vSphere-Client"
-
-    # Other common services
-    "Radius"            = "/infra/services/RADIUS"
-    "Radius-Accounting" = "/infra/services/RADIUS-Accounting"
-    "TACACS+"           = "/infra/services/TACACS+"
-  }
-
   # ===========================================================================
   # Parse simplified 'ports' syntax: "80/tcp" -> l4_port_set_entry
   # ===========================================================================
@@ -148,44 +48,67 @@ locals {
   }
 
   # ===========================================================================
-  # Identify services with nested references to local services
+  # Extract all service member references
   # ===========================================================================
 
   # Extract service members from each service
   service_members = {
-    for name, svc in var.services : name => concat(
-      # New format: members.services (consistent with security groups)
-      lookup(lookup(svc, "members", {}), "services", []),
-      # Legacy format: nested_service_entries[].service_name
-      [
-        for entry in lookup(svc, "nested_service_entries", []) :
-        lookup(entry, "service_name", "")
-        if lookup(entry, "service_name", null) != null
-      ]
-    )
+    for name, svc in var.services : name => lookup(lookup(svc, "members", {}), "services", [])
   }
 
-  # For each service, identify which members reference local services
+  # Collect ALL unique service references across all services
+  all_service_refs = distinct(flatten([
+    for name, members in local.service_members : members
+  ]))
+
+  # ===========================================================================
+  # Identify predefined services (not local, not external, not a path)
+  # ===========================================================================
+
+  predefined_service_names = [
+    for ref in local.all_service_refs : ref
+    if !can(regex("^/", ref)) &&                        # Not already a path
+    !contains(keys(var.services), ref) &&               # Not defined locally
+    !contains(keys(var.service_path_lookup), ref)       # Not passed externally
+  ]
+
+  # ===========================================================================
+  # Identify services with nested references to LOCAL services
+  # ===========================================================================
+
   services_with_local_refs = {
     for name, members in local.service_members : name => [
       for svc_name in members : svc_name
-      if !can(regex("^/", svc_name)) &&
-      contains(keys(var.services), svc_name) &&
-      !contains(keys(local.predefined_service_paths), svc_name)
+      if !can(regex("^/", svc_name)) && contains(keys(var.services), svc_name)
     ]
   }
 
-  # Leaf services: no nested entries or only reference external/predefined services
+  # Leaf services: no local nested refs (created first)
   leaf_service_names = [
     for name, refs in local.services_with_local_refs : name
     if length(refs) == 0
   ]
 
-  # Nested services: reference other services defined in this config
+  # Nested services: reference other services defined in this config (created after leaf)
   nested_service_names = [
     for name, refs in local.services_with_local_refs : name
     if length(refs) > 0
   ]
+}
+
+# =============================================================================
+# Build lookup map for predefined services
+# =============================================================================
+# Note: Predefined NSX services have predictable paths: /infra/services/{name}
+# We construct paths directly instead of using data source (which has prefix
+# matching issues with services like DNS, DNS-UDP, DNS-TCP).
+# =============================================================================
+
+locals {
+  # Map predefined service names to their paths (constructed directly)
+  predefined_service_path_lookup = {
+    for name in local.predefined_service_names : name => "/infra/services/${name}"
+  }
 
   # ===========================================================================
   # Process leaf services
@@ -195,7 +118,7 @@ locals {
     for name in local.leaf_service_names : name => merge(
       local.services_with_parsed_ports[name],
       {
-        # Resolve service members to paths (external/predefined only for leaf services)
+        # Resolve service members to paths
         resolved_service_paths = [
           for svc_name in local.service_members[name] : {
             name = svc_name
@@ -203,26 +126,19 @@ locals {
               # Check if it's already a path
               can(regex("^/", svc_name)) ? svc_name :
               # Check external service_path_lookup
-              lookup(var.service_path_lookup, svc_name, null) != null ?
+              contains(keys(var.service_path_lookup), svc_name) ?
               var.service_path_lookup[svc_name] :
-              # Check predefined services
-              lookup(local.predefined_service_paths, svc_name, null) != null ?
-              local.predefined_service_paths[svc_name] :
-              # Fallback to constructed path
-              "/infra/services/${svc_name}"
+              # Check predefined services (from data source)
+              contains(keys(local.predefined_service_path_lookup), svc_name) ?
+              local.predefined_service_path_lookup[svc_name] :
+              # Should not reach here - error
+              "ERROR: Service '${svc_name}' not found"
             )
           }
         ]
       }
     )
   }
-}
-
-# Data source for predefined services - enables validation that they exist
-data "nsxt_policy_service" "predefined" {
-  for_each = toset(var.predefined_services_to_lookup)
-
-  display_name = each.value
 }
 
 # =============================================================================
@@ -340,7 +256,7 @@ locals {
   # Combined lookup: external + predefined + leaf services
   combined_service_lookup = merge(
     var.service_path_lookup,
-    local.predefined_service_paths,
+    local.predefined_service_path_lookup,
     local.leaf_service_path_lookup
   )
 
@@ -357,10 +273,10 @@ locals {
               # Check if it's already a path
               can(regex("^/", svc_name)) ? svc_name :
               # Look up in combined lookup (includes leaf services)
-              lookup(local.combined_service_lookup, svc_name, null) != null ?
+              contains(keys(local.combined_service_lookup), svc_name) ?
               local.combined_service_lookup[svc_name] :
-              # Fallback to constructed path
-              "/infra/services/${svc_name}"
+              # Should not reach here - error
+              "ERROR: Service '${svc_name}' not found"
             )
           }
         ]

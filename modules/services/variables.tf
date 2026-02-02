@@ -28,9 +28,3 @@ variable "service_path_lookup" {
   type        = map(string)
   default     = {}
 }
-
-variable "predefined_services_to_lookup" {
-  description = "List of predefined NSX service names to look up via data source"
-  type        = list(string)
-  default     = []
-}

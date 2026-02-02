@@ -60,11 +60,10 @@ module "security_groups" {
 module "services" {
   source = "./modules/services"
 
-  services                      = local.services_with_index
-  project_id                    = var.project_id
-  default_tags                  = var.default_tags
-  service_path_lookup           = local.preliminary_service_paths
-  predefined_services_to_lookup = var.predefined_services_to_lookup
+  services            = local.services_with_index
+  project_id          = var.project_id
+  default_tags        = var.default_tags
+  service_path_lookup = local.preliminary_service_paths
 }
 
 # =============================================================================

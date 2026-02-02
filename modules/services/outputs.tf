@@ -24,8 +24,8 @@ output "services" {
 }
 
 output "predefined_service_paths" {
-  description = "Map of predefined service names to their NSX paths"
-  value       = { for k, v in data.nsxt_policy_service.predefined : k => v.path }
+  description = "Map of predefined service names to their NSX paths (constructed)"
+  value       = local.predefined_service_path_lookup
 }
 
 output "all_service_paths" {
@@ -33,6 +33,6 @@ output "all_service_paths" {
   value = merge(
     { for k, v in nsxt_policy_service.leaf : k => v.path },
     { for k, v in nsxt_policy_service.nested : k => v.path },
-    { for k, v in data.nsxt_policy_service.predefined : k => v.path }
+    local.predefined_service_path_lookup
   )
 }

@@ -25,19 +25,13 @@
 #   - OUT:    Outbound traffic only
 #
 # REFERENCE RESOLUTION:
-#   Groups and services can be referenced by:
-#   1. Name (defined in YAML files) - automatically resolved to NSX path
-#   2. Predefined service name (e.g., "DNS", "HTTPS") - built-in NSX services
-#   3. Full NSX path (e.g., "/infra/domains/default/groups/my-group")
+#   Groups and services are referenced by name and automatically resolved.
+#   Predefined NSX services (DNS, HTTP, etc.) are looked up dynamically.
 #
 # SPECIAL VALUES:
 #   - Empty array [] = Any (matches all sources/destinations/services)
 #   - null = Any
 #   - ["ANY"] = Explicit any (case-insensitive)
-#
-# SEQUENCE NUMBER CALCULATION:
-#   Auto-calculated as: category_start + (position_in_category * increment)
-#   Can be overridden with explicit sequence_number in YAML.
 #
 # =============================================================================
 
@@ -46,27 +40,24 @@ locals {
   group_lookup   = var.security_group_paths
   service_lookup = var.service_paths
 
-  # Predefined NSX service paths for common services
-  predefined_service_paths = {
-    "DNS"        = "/infra/services/DNS"
-    "DNS-UDP"    = "/infra/services/DNS-UDP"
-    "NTP"        = "/infra/services/NTP"
-    "HTTP"       = "/infra/services/HTTP"
-    "HTTPS"      = "/infra/services/HTTPS"
-    "SSH"        = "/infra/services/SSH"
-    "RDP"        = "/infra/services/RDP"
-    "FTP"        = "/infra/services/FTP"
-    "SMTP"       = "/infra/services/SMTP"
-    "LDAP"       = "/infra/services/LDAP"
-    "LDAPS"      = "/infra/services/LDAPS"
-    "MySQL"      = "/infra/services/MySQL"
-    "SMB"        = "/infra/services/SMB"
-    "ICMP-ALL"   = "/infra/services/ICMP-ALL"
-    "ICMPv6-ALL" = "/infra/services/ICMPv6-ALL"
-  }
+  # ===========================================================================
+  # Collect all service references from all rules
+  # ===========================================================================
 
-  # Merged service lookup including predefined services
-  all_service_lookup = merge(local.predefined_service_paths, local.service_lookup)
+  all_service_refs = distinct(flatten([
+    for policy_name, policy in var.security_policies : [
+      for rule in lookup(policy, "rules", []) : [
+        for svc in lookup(rule, "services", []) : svc
+        if upper(svc) != "ANY" && !can(regex("^/", svc))
+      ]
+    ]
+  ]))
+
+  # Identify predefined services (not in service_paths)
+  predefined_service_names = [
+    for ref in local.all_service_refs : ref
+    if !contains(keys(var.service_paths), ref)
+  ]
 
   # Category-based starting sequence numbers
   category_sequence_start = {
@@ -147,10 +138,30 @@ locals {
       }
     )
   }
-
 }
 
+# =============================================================================
+# Build combined service lookup
+# =============================================================================
+# Note: Predefined NSX services have predictable paths: /infra/services/{name}
+# We construct paths directly instead of using data source (which has prefix
+# matching issues with services like DNS, DNS-UDP, DNS-TCP).
+# =============================================================================
+
+locals {
+  # Map predefined service names to their paths (constructed directly)
+  predefined_service_path_lookup = {
+    for name in local.predefined_service_names : name => "/infra/services/${name}"
+  }
+
+  # Combined service lookup: custom services + predefined services
+  all_service_lookup = merge(local.service_lookup, local.predefined_service_path_lookup)
+}
+
+# =============================================================================
 # Validation: Check for sequence number collisions
+# =============================================================================
+
 resource "null_resource" "validate_sequence_collisions" {
   for_each = {
     for name, collisions in local.sequence_collisions : name => collisions
@@ -169,6 +180,10 @@ resource "null_resource" "validate_sequence_collisions" {
   }
 }
 
+# =============================================================================
+# Security Policies Resource
+# =============================================================================
+
 resource "nsxt_policy_security_policy" "this" {
   for_each = var.security_policies
 
@@ -184,9 +199,7 @@ resource "nsxt_policy_security_policy" "this" {
   # Policy scope
   scope = lookup(each.value, "scope", null) != null ? [
     for s in each.value.scope : (
-      # Handle "ANY" keyword
       upper(s) == "ANY" ? s :
-      # Resolve group reference or use direct path
       lookup(local.group_lookup, s, null) != null ? local.group_lookup[s] : s
     )
   ] : null
@@ -214,7 +227,6 @@ resource "nsxt_policy_security_policy" "this" {
       direction = lookup(rule.value, "direction", "IN_OUT")
 
       # Source groups - resolve references or use direct paths
-      # Empty list or null = any, "ANY" keyword = any
       source_groups = (
         lookup(rule.value, "source_groups", null) == null ||
         length(lookup(rule.value, "source_groups", [])) == 0 ||
@@ -222,10 +234,8 @@ resource "nsxt_policy_security_policy" "this" {
         ) ? null : [
         for g in rule.value.source_groups : (
           upper(g) == "ANY" ? g :
-          lookup(local.group_lookup, g, null) != null ? local.group_lookup[g] :
-          # Check if it looks like a path
+          contains(keys(local.group_lookup), g) ? local.group_lookup[g] :
           can(regex("^/", g)) ? g :
-          # Fail with error if reference not found
           file("ERROR: Referenced group '${g}' not found in rule '${rule.value.display_name}' of policy '${each.value.display_name}'. Define the group in security_groups.yaml or use a full NSX path.")
         )
       ]
@@ -238,7 +248,7 @@ resource "nsxt_policy_security_policy" "this" {
         ) ? null : [
         for g in rule.value.destination_groups : (
           upper(g) == "ANY" ? g :
-          lookup(local.group_lookup, g, null) != null ? local.group_lookup[g] :
+          contains(keys(local.group_lookup), g) ? local.group_lookup[g] :
           can(regex("^/", g)) ? g :
           file("ERROR: Referenced group '${g}' not found in rule '${rule.value.display_name}' of policy '${each.value.display_name}'. Define the group in security_groups.yaml or use a full NSX path.")
         )
@@ -255,13 +265,8 @@ resource "nsxt_policy_security_policy" "this" {
         ) ? null : [
         for s in rule.value.services : (
           upper(s) == "ANY" ? s :
-          # Check local services first
-          lookup(local.service_lookup, s, null) != null ? local.service_lookup[s] :
-          # Check predefined services
-          lookup(local.predefined_service_paths, s, null) != null ? local.predefined_service_paths[s] :
-          # Check if it looks like a path
+          contains(keys(local.all_service_lookup), s) ? local.all_service_lookup[s] :
           can(regex("^/", s)) ? s :
-          # Fail with error if reference not found
           file("ERROR: Referenced service '${s}' not found in rule '${rule.value.display_name}' of policy '${each.value.display_name}'. Define the service in services.yaml, use a predefined service name, or use a full NSX path.")
         )
       ]
@@ -282,7 +287,7 @@ resource "nsxt_policy_security_policy" "this" {
       scope = lookup(rule.value, "scope", null) != null ? [
         for s in rule.value.scope : (
           upper(s) == "ANY" ? s :
-          lookup(local.group_lookup, s, null) != null ? local.group_lookup[s] : s
+          contains(keys(local.group_lookup), s) ? local.group_lookup[s] : s
         )
       ] : null
 

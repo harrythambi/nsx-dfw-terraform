@@ -132,12 +132,3 @@ variable "tolerate_partial_success" {
   default     = false
 }
 
-# =============================================================================
-# Predefined Services Lookup
-# =============================================================================
-
-variable "predefined_services_to_lookup" {
-  description = "List of predefined NSX service names to look up via data source for validation"
-  type        = list(string)
-  default     = []
-}
