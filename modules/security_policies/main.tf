@@ -1,16 +1,44 @@
 # =============================================================================
-# NSX-T Security Policies (nsxt_policy_security_policy)
+# NSX-T Security Policies Module (nsxt_policy_security_policy)
 # =============================================================================
-# Supports:
-# - ALLOW, DROP, REJECT actions
-# - Category-based sequence numbering (Infrastructure=1000, Environment=2000, Application=3000)
-# - Explicit sequence_number that overrides auto-calculation
-# - Collision detection for sequence numbers
-# - Rule-level scope and tags
-# - Reference validation with clear error messages
-# - "ANY" keyword (case-insensitive) for explicit any match
-# - Empty arrays [] also mean "any"
-# - Defaults: direction=IN_OUT, logged=false, action=REQUIRED
+#
+# PURPOSE:
+#   Creates NSX-T distributed firewall security policies and their rules.
+#   Policies are containers for firewall rules and are evaluated in order
+#   based on category and sequence number.
+#
+# POLICY CATEGORIES (evaluation order):
+#   1. Ethernet     - Layer 2 rules (not implemented in this module)
+#   2. Emergency    - Break-glass/override rules (sequence starts at 100)
+#   3. Infrastructure - Core services like DNS, NTP, AD (starts at 1000)
+#   4. Environment  - Environment isolation rules (starts at 2000)
+#   5. Application  - Application-specific rules (starts at 3000)
+#
+# RULE ACTIONS:
+#   - ALLOW:  Permit the traffic
+#   - DROP:   Silently discard the traffic
+#   - REJECT: Discard with ICMP destination unreachable
+#
+# RULE DIRECTION:
+#   - IN_OUT: Apply to both directions (default)
+#   - IN:     Inbound traffic only
+#   - OUT:    Outbound traffic only
+#
+# REFERENCE RESOLUTION:
+#   Groups and services can be referenced by:
+#   1. Name (defined in YAML files) - automatically resolved to NSX path
+#   2. Predefined service name (e.g., "DNS", "HTTPS") - built-in NSX services
+#   3. Full NSX path (e.g., "/infra/domains/default/groups/my-group")
+#
+# SPECIAL VALUES:
+#   - Empty array [] = Any (matches all sources/destinations/services)
+#   - null = Any
+#   - ["ANY"] = Explicit any (case-insensitive)
+#
+# SEQUENCE NUMBER CALCULATION:
+#   Auto-calculated as: category_start + (position_in_category * increment)
+#   Can be overridden with explicit sequence_number in YAML.
+#
 # =============================================================================
 
 locals {

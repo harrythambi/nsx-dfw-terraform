@@ -1,5 +1,31 @@
 # =============================================================================
-# Local Variables - Data Processing
+# Local Variables - Data Processing and Validation
+# =============================================================================
+#
+# This file handles all data processing between YAML files and Terraform
+# modules. It performs:
+#
+# 1. FILE LOADING:
+#    - Reads YAML or JSON configuration files
+#    - Auto-detects file format by extension
+#
+# 2. DATA TRANSFORMATION:
+#    - Converts lists to maps keyed by resource name
+#    - Preserves definition order using indices
+#    - Generates preliminary paths for cross-references
+#
+# 3. SEQUENCE NUMBER CALCULATION:
+#    - Groups policies by category
+#    - Calculates sequence numbers within each category
+#    - Allows explicit overrides
+#
+# 4. VALIDATION:
+#    - Detects duplicate names (groups, services, policies)
+#    - Fails with clear error messages
+#
+# Data flow:
+#   YAML Files → Raw Data → Processed Data → Module Variables → NSX Resources
+#
 # =============================================================================
 
 locals {

@@ -1,15 +1,46 @@
 # =============================================================================
-# NSX-T Services (nsxt_policy_service)
+# NSX-T Services Module (nsxt_policy_service)
 # =============================================================================
-# Supports:
-# - L4 Port Set entries (TCP/UDP)
-# - ICMP entries
-# - IP Protocol entries
-# - IGMP entries
-# - EtherType entries
-# - Algorithm entries (ALG services like FTP)
-# - Nested service entries (reference other services by name or path)
-# - Predefined NSX service lookup
+#
+# PURPOSE:
+#   Creates NSX-T service definitions that specify protocols and ports
+#   for use in security policy rules. Services define WHAT traffic is
+#   allowed or denied (as opposed to groups which define WHO).
+#
+# SERVICE ENTRY TYPES:
+#
+#   L4 Port Set (l4_port_set_entries):
+#     TCP/UDP port definitions. Supports single ports, multiple ports,
+#     and port ranges (e.g., "80", "8080-8090").
+#
+#   ICMP (icmp_entries):
+#     ICMP type and code definitions for ICMPv4 or ICMPv6.
+#     Common types: 0=Echo Reply, 8=Echo Request, 3=Dest Unreachable
+#
+#   IP Protocol (ip_protocol_entries):
+#     Raw IP protocol numbers for non-TCP/UDP protocols.
+#     Examples: 47=GRE, 50=ESP, 51=AH, 89=OSPF
+#
+#   IGMP (igmp_entries):
+#     Internet Group Management Protocol for multicast.
+#
+#   EtherType (ether_type_entries):
+#     Layer 2 protocol types by EtherType number.
+#     Examples: 2048=IPv4, 2054=ARP, 34525=IPv6
+#
+#   Algorithm (algorithm_entries):
+#     Application Layer Gateway (ALG) services that require
+#     deep packet inspection. Examples: FTP, TFTP, Oracle TNS.
+#
+#   Nested Service (nested_service_entries):
+#     Compose services by including other services.
+#     Reference by name or NSX path.
+#
+# PREDEFINED SERVICES:
+#   NSX-T includes many predefined services (DNS, HTTP, SSH, etc.)
+#   that can be referenced directly in policies without defining them.
+#   This module maintains a lookup table of common predefined services.
+#
 # =============================================================================
 
 locals {

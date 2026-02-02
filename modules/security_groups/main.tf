@@ -1,15 +1,36 @@
 # =============================================================================
-# NSX-T Security Groups (nsxt_policy_group)
+# NSX-T Security Groups Module (nsxt_policy_group)
 # =============================================================================
-# Supports:
-# - Tag-based criteria
-# - OS Name criteria (member_type: VirtualMachine, key: OSName)
-# - Computer Name criteria (member_type: VirtualMachine, key: ComputerName)
-# - IP Address expressions
-# - MAC Address expressions
-# - Path expressions (for nested groups / member_groups)
-# - External ID expressions
-# - Complex criteria_groups with AND/OR conjunctions
+#
+# PURPOSE:
+#   Creates NSX-T security groups that define membership criteria for VMs,
+#   segments, and other objects. These groups are referenced in security
+#   policies to define source/destination for firewall rules.
+#
+# SUPPORTED CRITERIA TYPES:
+#   - Tag-based:      Match VMs by NSX tags (scope|tag format)
+#   - Name-based:     Match VMs by display name (CONTAINS, EQUALS, etc.)
+#   - OS Name:        Match VMs by operating system (Windows, Linux, etc.)
+#   - Computer Name:  Match VMs by hostname/computer name
+#   - IP Address:     Static IPs, CIDR ranges, IP ranges
+#   - MAC Address:    Static MAC addresses
+#   - Path:           Reference other NSX objects by their path
+#   - External ID:    Match by external identifiers (e.g., VM BIOS UUID)
+#   - Segment:        Match by network segment tags
+#   - SegmentPort:    Match by segment port tags
+#
+# CONJUNCTIONS:
+#   - OR:  Match if ANY criteria block matches (default between criteria)
+#   - AND: Match if ALL criteria blocks match (use criteria_groups)
+#
+# NESTED GROUPS:
+#   Groups can include other groups using member_groups, enabling
+#   hierarchical group composition.
+#
+# IDENTITY GROUPS:
+#   Extended criteria supports Active Directory identity-based groups
+#   using distinguished names or SIDs.
+#
 # =============================================================================
 
 locals {

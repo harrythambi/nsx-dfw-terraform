@@ -1,19 +1,41 @@
 # =============================================================================
-# NSX-T DFW Terraform Module
+# NSX-T Distributed Firewall (DFW) Terraform Module - Root Module
 # =============================================================================
-# This module manages NSX-T Distributed Firewall components:
-# - Security Groups (nsxt_policy_group)
-# - Services (nsxt_policy_service)
-# - Security Policies with Rules (nsxt_policy_security_policy)
 #
-# Features:
-# - YAML/JSON configuration files for all resources
-# - OS Name, Computer Name, and nested groups criteria
-# - Complex criteria_groups with AND/OR conjunctions
-# - Nested service entries with predefined service lookup
-# - REJECT action, rule-level scope and tags
-# - Category-based sequence numbering with collision detection
-# - Reference validation with clear error messages
+# OVERVIEW:
+#   This is the root module that orchestrates NSX-T DFW configuration.
+#   It reads YAML configuration files and delegates resource creation
+#   to specialized submodules.
+#
+# COMPONENTS MANAGED:
+#   1. Security Groups (nsxt_policy_group)
+#      - Define workload membership using various criteria
+#      - Support tags, IPs, names, paths, and complex expressions
+#
+#   2. Services (nsxt_policy_service)
+#      - Define protocols and ports for firewall rules
+#      - Support TCP/UDP, ICMP, IP protocols, ALG, and more
+#
+#   3. Security Policies (nsxt_policy_security_policy)
+#      - Container for firewall rules
+#      - Category-based ordering (Emergency → Infrastructure → Environment → Application)
+#
+# CONFIGURATION FILES:
+#   - data/security_groups.yaml   - Group definitions
+#   - data/services.yaml          - Service definitions
+#   - data/security_policies.yaml - Policy and rule definitions
+#
+# DEPENDENCY CHAIN:
+#   Security Groups → Services → Security Policies
+#   (Groups and services must exist before policies can reference them)
+#
+# FEATURES:
+#   - YAML/JSON configuration files for GitOps workflows
+#   - Automatic reference resolution (name → NSX path)
+#   - Category-based sequence numbering with collision detection
+#   - Comprehensive validation with clear error messages
+#   - Multitenancy support via NSX-T projects
+#
 # =============================================================================
 
 # =============================================================================
