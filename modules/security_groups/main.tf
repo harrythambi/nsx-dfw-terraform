@@ -23,9 +23,20 @@
 #   - OR:  Match if ANY criteria block matches (default between criteria)
 #   - AND: Match if ALL criteria blocks match (use criteria_groups)
 #
+# STATIC MEMBERS:
+#   Groups can include static members by path:
+#   - virtual_machines:        VM paths from realized state
+#   - segments:                NSX segment paths
+#   - segment_ports:           Segment port paths
+#   - groups:                  Nested security group paths
+#   - vifs:                    Virtual interface paths
+#   - physical_servers:        Physical server paths
+#   - distributed_port_groups: vSphere distributed port group paths
+#   - distributed_ports:       vSphere distributed port paths
+#
 # NESTED GROUPS:
-#   Groups can include other groups using member_groups, enabling
-#   hierarchical group composition.
+#   Groups can include other groups using member_groups or members.groups,
+#   enabling hierarchical group composition.
 #
 # IDENTITY GROUPS:
 #   Extended criteria supports Active Directory identity-based groups
@@ -63,7 +74,7 @@ locals {
           )
         ]) : lookup(group, "criteria", [])
 
-        # Resolve member_groups to paths
+        # Resolve member_groups to paths (legacy support)
         resolved_member_group_paths = lookup(group, "member_groups", null) != null ? [
           for mg in group.member_groups : (
             # Check if it's already a path (starts with /)
@@ -76,6 +87,34 @@ locals {
             )
           )
         ] : []
+
+        # Process static members section
+        # Collects all member paths from the members block
+        static_member_paths = concat(
+          # Virtual Machines
+          lookup(lookup(group, "members", {}), "virtual_machines", []),
+          # Segments
+          lookup(lookup(group, "members", {}), "segments", []),
+          # Segment Ports
+          lookup(lookup(group, "members", {}), "segment_ports", []),
+          # VIFs
+          lookup(lookup(group, "members", {}), "vifs", []),
+          # Physical Servers
+          lookup(lookup(group, "members", {}), "physical_servers", []),
+          # Distributed Port Groups
+          lookup(lookup(group, "members", {}), "distributed_port_groups", []),
+          # Distributed Ports
+          lookup(lookup(group, "members", {}), "distributed_ports", []),
+          # Nested Groups (from members.groups)
+          [
+            for g in lookup(lookup(group, "members", {}), "groups", []) : (
+              can(regex("^/", g)) ? g : (
+                lookup(var.group_path_lookup, g, null) != null ? var.group_path_lookup[g] :
+                "/infra/domains/${var.domain}/groups/${g}"
+              )
+            )
+          ]
+        )
       }
     )
   }
@@ -225,12 +264,24 @@ resource "nsxt_policy_group" "this" {
     }
   }
 
-  # Nested groups via path_expression (member_groups)
+  # Nested groups via path_expression (member_groups - legacy)
   dynamic "criteria" {
     for_each = length(each.value.resolved_member_group_paths) > 0 ? [1] : []
     content {
       path_expression {
         member_paths = each.value.resolved_member_group_paths
+      }
+    }
+  }
+
+  # Static members via path_expression (members section)
+  # Includes: virtual_machines, segments, segment_ports, groups, vifs,
+  # physical_servers, distributed_port_groups, distributed_ports
+  dynamic "criteria" {
+    for_each = length(each.value.static_member_paths) > 0 ? [1] : []
+    content {
+      path_expression {
+        member_paths = each.value.static_member_paths
       }
     }
   }

@@ -77,15 +77,79 @@ security_groups:
             value: "app"
 
   # -------------------------------------------------------------------------
-  # Example: Mixed criteria (Path expression)
-  # Note: Commented out - requires an existing group path in your NSX environment
+  # Example: Static Members - Virtual Machines
+  # Note: Commented out - requires actual VM paths from your environment
+  # Get VM paths from: NSX Manager > Inventory > Virtual Machines
   # -------------------------------------------------------------------------
   # - name: specific-vms
-  #   display_name: "Specific VMs"
-  #   description: "Specific VMs by path"
+  #   display_name: "Specific Virtual Machines"
+  #   description: "Manually selected VMs"
+  #   members:
+  #     virtual_machines:
+  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-123"
+  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-456"
+
+  # -------------------------------------------------------------------------
+  # Example: Static Members - NSX Segments
+  # Note: Commented out - requires actual segment paths from your environment
+  # -------------------------------------------------------------------------
+  # - name: selected-segments
+  #   display_name: "Selected Segments"
+  #   description: "Manually selected network segments"
+  #   members:
+  #     segments:
+  #       - "/infra/segments/web-segment"
+  #       - "/infra/segments/app-segment"
+
+  # -------------------------------------------------------------------------
+  # Example: Static Members - Nested Groups
+  # Note: Commented out - requires existing groups
+  # -------------------------------------------------------------------------
+  # - name: combined-group
+  #   display_name: "Combined Group"
+  #   description: "Group containing other groups"
+  #   members:
+  #     groups:
+  #       - web-servers           # Reference by name (defined above)
+  #       - app-servers           # Reference by name (defined above)
+  #       - "/infra/domains/default/groups/existing-group"  # Or by path
+
+  # -------------------------------------------------------------------------
+  # Example: Static Members - Mixed Types
+  # Note: Commented out - requires actual paths from your environment
+  # -------------------------------------------------------------------------
+  # - name: mixed-members
+  #   display_name: "Mixed Static Members"
+  #   description: "Group with various static member types"
+  #   members:
+  #     virtual_machines:
+  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/vm-789"
+  #     segments:
+  #       - "/infra/segments/db-segment"
+  #     segment_ports:
+  #       - "/infra/segments/web-segment/ports/port-001"
+  #     groups:
+  #       - web-servers
+  #     # Also supported:
+  #     # vifs: []
+  #     # physical_servers: []
+  #     # distributed_port_groups: []
+  #     # distributed_ports: []
+
+  # -------------------------------------------------------------------------
+  # Example: Combining Criteria and Static Members
+  # Note: Commented out - requires actual paths
+  # -------------------------------------------------------------------------
+  # - name: hybrid-group
+  #   display_name: "Hybrid Group"
+  #   description: "Combines dynamic criteria with static members"
   #   criteria:
-  #     - paths:
-  #         - "/infra/domains/default/groups/existing-group"
+  #     - conditions:
+  #         - key: Tag
+  #           value: "web|tier"
+  #   members:
+  #     virtual_machines:
+  #       - "/infra/realized-state/enforcement-points/default/virtual-machines/special-vm"
 
   # -------------------------------------------------------------------------
   # Example: Group with tags
