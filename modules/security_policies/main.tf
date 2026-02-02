@@ -51,12 +51,6 @@ locals {
   # Valid actions for rules
   valid_actions = ["ALLOW", "DROP", "REJECT"]
 
-  # Helper to check if a value represents "any"
-  # Returns true if the value is null, empty list, "ANY" (case-insensitive), or ["ANY"]
-  is_any = {
-    for key in ["check"] : key => true
-  }
-
   # Process policies - calculate sequence numbers and validate
   policies_with_sequence = {
     for name, policy in var.security_policies : name => merge(
@@ -65,7 +59,7 @@ locals {
         # Calculate sequence number based on category if not explicitly provided
         calculated_sequence = lookup(policy, "sequence_number", null) != null ? (
           policy.sequence_number
-        ) : (
+          ) : (
           lookup(local.category_sequence_start, lookup(policy, "category", "Application"), 3000) +
           (index([for p in values(var.security_policies) : p.display_name], policy.display_name) * var.policy_sequence_increment)
         )
@@ -105,42 +99,19 @@ locals {
               # Validate action is provided and valid
               validated_action = (
                 lookup(rule, "action", null) == null ?
-                  file("ERROR: action is REQUIRED on every rule. Rule '${lookup(rule, "display_name", "unnamed")}' in policy '${name}' is missing action.") :
+                file("ERROR: action is REQUIRED on every rule. Rule '${lookup(rule, "display_name", "unnamed")}' in policy '${name}' is missing action.") :
                 (
                   !contains(local.valid_actions, upper(lookup(rule, "action", ""))) ?
-                    file("ERROR: Invalid action '${lookup(rule, "action", "")}' in rule '${lookup(rule, "display_name", "unnamed")}'. Valid actions: ALLOW, DROP, REJECT") :
-                    upper(rule.action)
+                  file("ERROR: Invalid action '${lookup(rule, "action", "")}' in rule '${lookup(rule, "display_name", "unnamed")}'. Valid actions: ALLOW, DROP, REJECT") :
+                  upper(rule.action)
                 )
               )
 
               # Calculate rule sequence number
               rule_sequence = lookup(rule, "sequence_number", null) != null ? (
                 rule.sequence_number
-              ) : (
+                ) : (
                 var.rule_sequence_start + (rule_idx * var.rule_sequence_increment)
-              )
-
-              # Process source groups - validate references
-              validated_sources = local.process_group_refs(
-                lookup(rule, "source_groups", null),
-                rule,
-                name,
-                "source_groups"
-              )
-
-              # Process destination groups - validate references
-              validated_destinations = local.process_group_refs(
-                lookup(rule, "destination_groups", null),
-                rule,
-                name,
-                "destination_groups"
-              )
-
-              # Process services - validate references
-              validated_services = local.process_service_refs(
-                lookup(rule, "services", null),
-                rule,
-                name
               )
             }
           )
@@ -149,15 +120,6 @@ locals {
     )
   }
 
-  # Helper function to process group references
-  process_group_refs = {
-    for key in ["func"] : key => true
-  }
-
-  # Helper function to process service references
-  process_service_refs = {
-    for key in ["func"] : key => true
-  }
 }
 
 # Validation: Check for sequence number collisions
@@ -213,7 +175,7 @@ resource "nsxt_policy_security_policy" "this" {
       # Rule sequence number
       sequence_number = lookup(rule.value, "sequence_number", null) != null ? (
         rule.value.sequence_number
-      ) : (
+        ) : (
         var.rule_sequence_start + (rule.value._idx * var.rule_sequence_increment)
       )
 
@@ -229,7 +191,7 @@ resource "nsxt_policy_security_policy" "this" {
         lookup(rule.value, "source_groups", null) == null ||
         length(lookup(rule.value, "source_groups", [])) == 0 ||
         (length(lookup(rule.value, "source_groups", [])) == 1 && upper(lookup(rule.value, "source_groups", [""])[0]) == "ANY")
-      ) ? null : [
+        ) ? null : [
         for g in rule.value.source_groups : (
           upper(g) == "ANY" ? g :
           lookup(local.group_lookup, g, null) != null ? local.group_lookup[g] :
@@ -245,7 +207,7 @@ resource "nsxt_policy_security_policy" "this" {
         lookup(rule.value, "destination_groups", null) == null ||
         length(lookup(rule.value, "destination_groups", [])) == 0 ||
         (length(lookup(rule.value, "destination_groups", [])) == 1 && upper(lookup(rule.value, "destination_groups", [""])[0]) == "ANY")
-      ) ? null : [
+        ) ? null : [
         for g in rule.value.destination_groups : (
           upper(g) == "ANY" ? g :
           lookup(local.group_lookup, g, null) != null ? local.group_lookup[g] :
@@ -262,7 +224,7 @@ resource "nsxt_policy_security_policy" "this" {
         lookup(rule.value, "services", null) == null ||
         length(lookup(rule.value, "services", [])) == 0 ||
         (length(lookup(rule.value, "services", [])) == 1 && upper(lookup(rule.value, "services", [""])[0]) == "ANY")
-      ) ? null : [
+        ) ? null : [
         for s in rule.value.services : (
           upper(s) == "ANY" ? s :
           # Check local services first

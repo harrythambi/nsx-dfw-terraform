@@ -16,34 +16,34 @@ locals {
   # Common predefined NSX services - map friendly names to NSX paths
   predefined_service_paths = {
     # Core network services
-    "DNS"        = "/infra/services/DNS"
-    "DNS-UDP"    = "/infra/services/DNS-UDP"
-    "NTP"        = "/infra/services/NTP"
+    "DNS"         = "/infra/services/DNS"
+    "DNS-UDP"     = "/infra/services/DNS-UDP"
+    "NTP"         = "/infra/services/NTP"
     "DHCP-Server" = "/infra/services/DHCP-Server"
     "DHCP-Client" = "/infra/services/DHCP-Client"
 
     # Web services
-    "HTTP"       = "/infra/services/HTTP"
-    "HTTPS"      = "/infra/services/HTTPS"
+    "HTTP"  = "/infra/services/HTTP"
+    "HTTPS" = "/infra/services/HTTPS"
 
     # Remote access
-    "SSH"        = "/infra/services/SSH"
-    "RDP"        = "/infra/services/RDP"
-    "Telnet"     = "/infra/services/Telnet"
+    "SSH"    = "/infra/services/SSH"
+    "RDP"    = "/infra/services/RDP"
+    "Telnet" = "/infra/services/Telnet"
 
     # File transfer
-    "FTP"        = "/infra/services/FTP"
-    "TFTP"       = "/infra/services/TFTP"
-    "SCP"        = "/infra/services/SCP"
-    "SFTP"       = "/infra/services/SFTP"
+    "FTP"  = "/infra/services/FTP"
+    "TFTP" = "/infra/services/TFTP"
+    "SCP"  = "/infra/services/SCP"
+    "SFTP" = "/infra/services/SFTP"
 
     # Email services
-    "SMTP"       = "/infra/services/SMTP"
-    "SMTP_TLS"   = "/infra/services/SMTP_TLS"
-    "POP3"       = "/infra/services/POP3"
-    "POP3S"      = "/infra/services/POP3S"
-    "IMAP"       = "/infra/services/IMAP"
-    "IMAPS"      = "/infra/services/IMAPS"
+    "SMTP"     = "/infra/services/SMTP"
+    "SMTP_TLS" = "/infra/services/SMTP_TLS"
+    "POP3"     = "/infra/services/POP3"
+    "POP3S"    = "/infra/services/POP3S"
+    "IMAP"     = "/infra/services/IMAP"
+    "IMAPS"    = "/infra/services/IMAPS"
 
     # Database services
     "MySQL"      = "/infra/services/MySQL"
@@ -51,19 +51,19 @@ locals {
     "Oracle-SQL" = "/infra/services/Oracle-SQL-Net"
 
     # Directory services
-    "LDAP"       = "/infra/services/LDAP"
-    "LDAPS"      = "/infra/services/LDAPS"
-    "AD-Server"  = "/infra/services/AD-Server"
-    "Kerberos"   = "/infra/services/Kerberos"
+    "LDAP"      = "/infra/services/LDAP"
+    "LDAPS"     = "/infra/services/LDAPS"
+    "AD-Server" = "/infra/services/AD-Server"
+    "Kerberos"  = "/infra/services/Kerberos"
 
     # Windows services
-    "WINS"       = "/infra/services/WINS"
-    "SMB"        = "/infra/services/SMB"
-    "NBNS-UDP"   = "/infra/services/NBNS-UDP"
-    "NBNS-TCP"   = "/infra/services/NBNS-TCP"
-    "NBDG-TCP"   = "/infra/services/NBDG-TCP"
-    "NBDG-UDP"   = "/infra/services/NBDG-UDP"
-    "NBSS"       = "/infra/services/NBSS"
+    "WINS"     = "/infra/services/WINS"
+    "SMB"      = "/infra/services/SMB"
+    "NBNS-UDP" = "/infra/services/NBNS-UDP"
+    "NBNS-TCP" = "/infra/services/NBNS-TCP"
+    "NBDG-TCP" = "/infra/services/NBDG-TCP"
+    "NBDG-UDP" = "/infra/services/NBDG-UDP"
+    "NBSS"     = "/infra/services/NBSS"
 
     # Monitoring and management
     "SNMP"       = "/infra/services/SNMP"
@@ -77,20 +77,20 @@ locals {
     "ICMP Echo"  = "/infra/services/ICMP_Echo_Reply"
 
     # VPN
-    "IKE"        = "/infra/services/IKE"
-    "IPSEC-ESP"  = "/infra/services/IPSEC-ESP"
-    "IPSEC-AH"   = "/infra/services/IPSEC-AH"
-    "L2TP"       = "/infra/services/L2TP"
-    "PPTP"       = "/infra/services/PPTP"
+    "IKE"       = "/infra/services/IKE"
+    "IPSEC-ESP" = "/infra/services/IPSEC-ESP"
+    "IPSEC-AH"  = "/infra/services/IPSEC-AH"
+    "L2TP"      = "/infra/services/L2TP"
+    "PPTP"      = "/infra/services/PPTP"
 
     # Virtualization
-    "vMotion"    = "/infra/services/vMotion"
+    "vMotion"        = "/infra/services/vMotion"
     "vSphere-Client" = "/infra/services/vSphere-Client"
 
     # Other common services
-    "Radius"     = "/infra/services/RADIUS"
+    "Radius"            = "/infra/services/RADIUS"
     "Radius-Accounting" = "/infra/services/RADIUS-Accounting"
-    "TACACS+"    = "/infra/services/TACACS+"
+    "TACACS+"           = "/infra/services/TACACS+"
   }
 
   # Process services to resolve nested service references
@@ -110,13 +110,13 @@ locals {
                 lookup(entry, "service_name", null) != null ? (
                   # First check local services
                   lookup(var.service_path_lookup, entry.service_name, null) != null ?
-                    var.service_path_lookup[entry.service_name] :
+                  var.service_path_lookup[entry.service_name] :
                   # Then check predefined services
                   lookup(local.predefined_service_paths, entry.service_name, null) != null ?
-                    local.predefined_service_paths[entry.service_name] :
+                  local.predefined_service_paths[entry.service_name] :
                   # Otherwise assume it's a path or will be created
                   can(regex("^/", entry.service_name)) ? entry.service_name :
-                    "/infra/services/${entry.service_name}"
+                  "/infra/services/${entry.service_name}"
                 ) : null
               )
             }

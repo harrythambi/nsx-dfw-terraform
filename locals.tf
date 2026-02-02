@@ -95,7 +95,7 @@ locals {
         # Use explicit sequence_number if provided, otherwise calculate based on category
         sequence_number = lookup(policy, "sequence_number", null) != null ? (
           policy.sequence_number
-        ) : (
+          ) : (
           # Category-based sequence: category_start + (position_in_category * increment)
           lookup(local.category_sequence_start, lookup(policy, "category", "Application"), 3000) +
           (

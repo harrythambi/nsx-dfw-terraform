@@ -35,7 +35,7 @@ locals {
             # Add conjunction after this criteria_group (except for last)
             cg_idx < length(group.criteria_groups) - 1 ? [
               {
-                _is_conjunction = true
+                _is_conjunction       = true
                 _conjunction_operator = lookup(cg, "conjunction_with_next", "OR")
               }
             ] : []
@@ -82,7 +82,7 @@ resource "nsxt_policy_group" "this" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
           if lookup(cond, "type", lookup(cond, "key", "Tag")) == "Tag" ||
-             (lookup(cond, "key", null) == "Tag" && lookup(cond, "type", null) == null)
+          (lookup(cond, "key", null) == "Tag" && lookup(cond, "type", null) == null)
         ]
         content {
           key         = "Tag"
@@ -97,7 +97,7 @@ resource "nsxt_policy_group" "this" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
           if lookup(cond, "type", lookup(cond, "key", "")) == "Name" ||
-             lookup(cond, "key", null) == "Name"
+          lookup(cond, "key", null) == "Name"
         ]
         content {
           key         = "Name"
@@ -112,8 +112,8 @@ resource "nsxt_policy_group" "this" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
           if lookup(cond, "type", lookup(cond, "key", "")) == "OSName" ||
-             lookup(cond, "key", null) == "OSName" ||
-             lookup(cond, "type", null) == "os_name"
+          lookup(cond, "key", null) == "OSName" ||
+          lookup(cond, "type", null) == "os_name"
         ]
         content {
           key         = "OSName"
@@ -128,8 +128,8 @@ resource "nsxt_policy_group" "this" {
         for_each = [
           for cond in lookup(criteria.value, "conditions", []) : cond
           if lookup(cond, "type", lookup(cond, "key", "")) == "ComputerName" ||
-             lookup(cond, "key", null) == "ComputerName" ||
-             lookup(cond, "type", null) == "computer_name"
+          lookup(cond, "key", null) == "ComputerName" ||
+          lookup(cond, "type", null) == "computer_name"
         ]
         content {
           key         = "ComputerName"
@@ -168,7 +168,7 @@ resource "nsxt_policy_group" "this" {
       }
 
       # IP Address Expression
-      dynamic "ip_address_expression" {
+      dynamic "ipaddress_expression" {
         for_each = lookup(criteria.value, "ip_addresses", null) != null ? [1] : []
         content {
           ip_addresses = criteria.value.ip_addresses
@@ -176,7 +176,7 @@ resource "nsxt_policy_group" "this" {
       }
 
       # MAC Address Expression
-      dynamic "mac_address_expression" {
+      dynamic "macaddress_expression" {
         for_each = lookup(criteria.value, "mac_addresses", null) != null ? [1] : []
         content {
           mac_addresses = criteria.value.mac_addresses
@@ -217,7 +217,7 @@ resource "nsxt_policy_group" "this" {
     for_each = lookup(each.value, "criteria_groups", null) != null ? [
       for c in each.value.processed_criteria : c
       if lookup(c, "_is_conjunction", false)
-    ] : (
+      ] : (
       lookup(each.value, "conjunction", null) != null ? [{ _conjunction_operator = each.value.conjunction }] : []
     )
     content {
