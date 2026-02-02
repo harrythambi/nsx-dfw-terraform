@@ -1,104 +1,110 @@
 # =============================================================================
-# NSX-T Security Groups Configuration - Test All Scenarios
+# NSX-T Security Groups Configuration
+# =============================================================================
+# Defines WHO is included in firewall rules (sources and destinations).
+#
+# MEMBERSHIP TYPES:
+#   members:   Static membership - list objects by display name
+#     virtual_machines: [vm1, vm2]
+#     segments: [seg1, seg2]
+#     groups: [group1, group2]    (nested groups)
+#
+#   criteria:  Dynamic membership - match by tags, IPs, conditions
+#     conditions: [{value: "scope|tag", member_type: VirtualMachine}]
+#     ip_addresses: [10.0.0.0/8, 192.168.0.0/16]
+#
+#   tags:      Resource tags ON the group itself (for organization)
+#
+# MEMBER TYPES FOR CONDITIONS:
+#   VirtualMachine (default), Segment, SegmentPort, IPSet, Group
 # =============================================================================
 
 security_groups:
-  # -------------------------------------------------------------------------
-  # Test 1: Group with VM members (by display name)
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Static Membership - VMs by display name
+  # ---------------------------------------------------------------------------
+
   - name: vm-group-nas
     display_name: "NAS Servers"
-    description: "NAS servers selected by VM display name"
+    description: "NAS servers"
     members:
       virtual_machines:
-        - "rod11-nas01"
-        - "rod11-nas02"
+        - rod11-nas01
+        - rod11-nas02
+    tags:
+      - scope: managed-by
+        tag: terraform
 
-  # -------------------------------------------------------------------------
-  # Test 2: Group with single VM member
-  # -------------------------------------------------------------------------
   - name: vm-group-vcenter
-    display_name: "vCenter Server"
-    description: "vCenter server VM"
+    display_name: "vCenter Servers"
+    description: "vCenter and VCD servers"
     members:
       virtual_machines:
-        - "rod11-vc01"
+        - rod11-vc01
+        - rod11-vcd01
 
-  # -------------------------------------------------------------------------
-  # Test 3: Group with multiple VMs of different types
-  # -------------------------------------------------------------------------
   - name: vm-group-management
     display_name: "Management VMs"
     description: "All management VMs"
     members:
       virtual_machines:
-        - "rod11-linmgmt01"
-        - "rod11-winmgmt01"
-        - "rod11-vc01"
-        - "rod11-vcd01"
+        - rod11-linmgmt01
+        - rod11-winmgmt01
+        - rod11-vc01
+        - rod11-vcd01
 
-  # -------------------------------------------------------------------------
-  # Test 4: Group with NSX infrastructure VMs
-  # -------------------------------------------------------------------------
   - name: vm-group-nsx
     display_name: "NSX Infrastructure"
     description: "NSX manager and edge VMs"
     members:
       virtual_machines:
-        - "rod11-nsx01"
-        - "rod11-nsx-en02"
+        - rod11-nsx01
+        - rod11-nsx-en02
 
-  # -------------------------------------------------------------------------
-  # Test 5: Group with segment members (by display name)
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Static Membership - Segments by display name
+  # ---------------------------------------------------------------------------
+
   - name: segment-group-tenant01
     display_name: "Tenant01 Segments"
     description: "All tenant01 segments"
     members:
       segments:
-        - "automation-tenant01-backend"
-        - "automation-tenant01-frontend"
-        - "automation-tenant01-mgmt"
+        - automation-tenant01-backend
+        - automation-tenant01-frontend
+        - automation-tenant01-mgmt
 
-  # -------------------------------------------------------------------------
-  # Test 6: Group with tenant02 segments
-  # -------------------------------------------------------------------------
   - name: segment-group-tenant02
     display_name: "Tenant02 Segments"
     description: "All tenant02 segments"
     members:
       segments:
-        - "automation-tenant02-backend"
-        - "automation-tenant02-frontend"
-        - "automation-tenant02-mgmt"
+        - automation-tenant02-backend
+        - automation-tenant02-frontend
+        - automation-tenant02-mgmt
 
-  # -------------------------------------------------------------------------
-  # Test 7: Group with holodeck segments
-  # -------------------------------------------------------------------------
   - name: segment-group-holodeck
     display_name: "Holodeck Segments"
     description: "Holodeck lab segments"
     members:
       segments:
-        - "holodeck-lab1-site-a-trunk"
-        - "holodeck-lab1-site-b-trunk"
-        - "holodeck-mgmt"
+        - holodeck-lab1-site-a-trunk
+        - holodeck-lab1-site-b-trunk
+        - holodeck-mgmt
 
-  # -------------------------------------------------------------------------
-  # Test 8: Group with infrastructure segments
-  # -------------------------------------------------------------------------
   - name: segment-group-infra
     display_name: "Infrastructure Segments"
     description: "Infrastructure network segments"
     members:
       segments:
-        - "rod11-avi-mgmt"
-        - "rod11-avi-se-data"
-        - "rod11-avn"
+        - rod11-avi-mgmt
+        - rod11-avi-se-data
+        - rod11-avn
 
-  # -------------------------------------------------------------------------
-  # Test 9: Nested group - combining VM groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Nested Groups - Reference other groups by name
+  # ---------------------------------------------------------------------------
+
   - name: nested-group-all-vms
     display_name: "All VM Groups Combined"
     description: "Nested group containing other VM groups"
@@ -108,9 +114,6 @@ security_groups:
         - vm-group-management
         - vm-group-nsx
 
-  # -------------------------------------------------------------------------
-  # Test 10: Nested group - combining segment groups
-  # -------------------------------------------------------------------------
   - name: nested-group-all-segments
     display_name: "All Segment Groups Combined"
     description: "Nested group containing other segment groups"
@@ -121,72 +124,68 @@ security_groups:
         - segment-group-holodeck
         - segment-group-infra
 
-  # -------------------------------------------------------------------------
-  # Test 11: Mixed members - VMs and Segments together
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Mixed Static Members
+  # ---------------------------------------------------------------------------
+
   - name: mixed-group-avi
     display_name: "AVI Infrastructure"
-    description: "AVI-related VMs and segments"
+    description: "AVI-related segments"
     members:
       segments:
-        - "rod11-avi-mgmt"
-        - "rod11-avi-se-data"
+        - rod11-avi-mgmt
+        - rod11-avi-se-data
 
-  # -------------------------------------------------------------------------
-  # Test 12: Mixed members - VMs, Segments, and Nested Groups
-  # -------------------------------------------------------------------------
   - name: mixed-group-complete
     display_name: "Complete Mixed Group"
-    description: "Group with VMs, segments, and nested groups"
+    description: "VMs, segments, and nested groups combined"
     members:
       virtual_machines:
-        - "rod11-linmgmt01"
+        - rod11-linmgmt01
       segments:
-        - "rod11-avn"
+        - rod11-avn
       groups:
         - vm-group-nas
 
-  # -------------------------------------------------------------------------
-  # Test 13: Hybrid - Dynamic criteria + Static members
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Dynamic Membership - Criteria block
+  # ---------------------------------------------------------------------------
+
+  # Tag-based VM group (member_type defaults to VirtualMachine)
   - name: hybrid-group-tagged-plus-static
     display_name: "Hybrid Tagged and Static"
     description: "Combines tag criteria with static VM members"
     criteria:
       - conditions:
-          - key: Tag
-            member_type: VirtualMachine
-            operator: EQUALS
-            value: "production|environment"
+          - value: production|environment
     members:
       virtual_machines:
-        - "rod11-vc01"
-        - "rod11-vcd01"
+        - rod11-vc01
+        - rod11-vcd01
 
-  # -------------------------------------------------------------------------
-  # Test 14: IP-based group (for comparison)
-  # -------------------------------------------------------------------------
+  # IP address group
   - name: ip-group-management
     display_name: "Management Networks"
     description: "IP-based management networks"
     criteria:
       - ip_addresses:
-          - "10.0.0.0/8"
-          - "192.168.0.0/16"
+          - 10.0.0.0/8
+          - 192.168.0.0/16
 
-  # -------------------------------------------------------------------------
-  # Test 15: All VMs in environment
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # All Lab VMs
+  # ---------------------------------------------------------------------------
+
   - name: all-lab-vms
     display_name: "All Lab VMs"
     description: "Every VM in the lab environment"
     members:
       virtual_machines:
-        - "rod11-linmgmt01"
-        - "rod11-nas01"
-        - "rod11-nas02"
-        - "rod11-nsx-en02"
-        - "rod11-nsx01"
-        - "rod11-vc01"
-        - "rod11-vcd01"
-        - "rod11-winmgmt01"
+        - rod11-linmgmt01
+        - rod11-nas01
+        - rod11-nas02
+        - rod11-nsx-en02
+        - rod11-nsx01
+        - rod11-vc01
+        - rod11-vcd01
+        - rod11-winmgmt01

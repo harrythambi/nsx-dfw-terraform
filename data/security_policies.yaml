@@ -1,234 +1,244 @@
 # =============================================================================
-# NSX-T Security Policies Configuration - Test All Scenarios
+# NSX-T Security Policies Configuration
 # =============================================================================
-# All rules are ALLOW for testing purposes
+# Defines firewall RULES that control traffic flow.
+#
+# RULE FIELDS:
+#   source_groups:         Source group names (omit for ANY)
+#   sources_excluded:      true = NOT these sources (negate)
+#   destination_groups:    Destination group names (omit for ANY)
+#   destinations_excluded: true = NOT these destinations (negate)
+#   services:              Service names (omit for ANY)
+#   action:                ALLOW, DROP, or REJECT
+#   logged:                Enable logging
+#   direction:             IN_OUT (default), IN, or OUT
+#
+# CATEGORIES (evaluation order):
+#   Emergency, Infrastructure, Environment, Application
+#
+# RESOURCE TAGS:
+#   tags: [{scope: "key", tag: "value"}]  - Tags ON the policy/rule itself
 # =============================================================================
 
 security_policies:
-  # -------------------------------------------------------------------------
-  # Test Policy 1: VM-based groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # VM Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-vm-groups-policy
     display_name: "Test VM Groups Policy"
     description: "Test policy for VM-based security groups"
     category: Application
-    stateful: true
+    tags:
+      - scope: managed-by
+        tag: terraform
     rules:
       - display_name: "Allow NAS to Management"
-        description: "Test VM group to VM group"
         action: ALLOW
         source_groups:
           - vm-group-nas
         destination_groups:
           - vm-group-management
-        services: []
         logged: true
 
       - display_name: "Allow vCenter Outbound"
-        description: "Test single VM group"
         action: ALLOW
         source_groups:
           - vm-group-vcenter
-        destination_groups: []
-        services: []
-        logged: true
+        # destination_groups omitted = ANY
 
       - display_name: "Allow NSX Infrastructure"
-        description: "Test NSX VMs group"
         action: ALLOW
         source_groups:
           - vm-group-nsx
         destination_groups:
           - vm-group-nsx
-        services: []
-        logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 2: Segment-based groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Segment Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-segment-groups-policy
     display_name: "Test Segment Groups Policy"
     description: "Test policy for segment-based security groups"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow Tenant01 Internal"
-        description: "Test segment group internal traffic"
         action: ALLOW
         source_groups:
           - segment-group-tenant01
         destination_groups:
           - segment-group-tenant01
-        services: []
         logged: true
 
       - display_name: "Allow Tenant02 Internal"
-        description: "Test tenant02 segment group"
         action: ALLOW
         source_groups:
           - segment-group-tenant02
         destination_groups:
           - segment-group-tenant02
-        services: []
-        logged: true
 
       - display_name: "Allow Holodeck Internal"
-        description: "Test holodeck segment group"
         action: ALLOW
         source_groups:
           - segment-group-holodeck
         destination_groups:
           - segment-group-holodeck
-        services: []
-        logged: true
 
       - display_name: "Allow Infra Segments"
-        description: "Test infrastructure segment group"
         action: ALLOW
         source_groups:
           - segment-group-infra
         destination_groups:
           - segment-group-infra
-        services: []
-        logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 3: Nested groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Nested Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-nested-groups-policy
     display_name: "Test Nested Groups Policy"
     description: "Test policy for nested security groups"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow All VMs Nested Group"
-        description: "Test nested VM groups"
         action: ALLOW
         source_groups:
           - nested-group-all-vms
-        destination_groups: []
-        services: []
         logged: true
 
       - display_name: "Allow All Segments Nested Group"
-        description: "Test nested segment groups"
         action: ALLOW
         source_groups:
           - nested-group-all-segments
         destination_groups:
           - nested-group-all-segments
-        services: []
-        logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 4: Mixed member groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Mixed Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-mixed-groups-policy
     display_name: "Test Mixed Groups Policy"
     description: "Test policy for mixed member groups"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow AVI Infrastructure"
-        description: "Test mixed VMs and segments group"
         action: ALLOW
         source_groups:
           - mixed-group-avi
         destination_groups:
           - mixed-group-avi
-        services: []
         logged: true
 
       - display_name: "Allow Complete Mixed Group"
-        description: "Test VMs, segments, and nested groups combined"
         action: ALLOW
         source_groups:
           - mixed-group-complete
-        destination_groups: []
-        services: []
-        logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 5: Hybrid groups (criteria + static members)
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Hybrid Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-hybrid-groups-policy
     display_name: "Test Hybrid Groups Policy"
     description: "Test policy for hybrid dynamic and static groups"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow Hybrid Group Traffic"
-        description: "Test tag criteria + static VMs"
         action: ALLOW
         source_groups:
           - hybrid-group-tagged-plus-static
         destination_groups:
           - vm-group-management
-        services: []
         logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 6: IP-based groups
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # IP Groups Policy
+  # ---------------------------------------------------------------------------
   - name: test-ip-groups-policy
     display_name: "Test IP Groups Policy"
     description: "Test policy for IP-based groups"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow Management Networks"
-        description: "Test IP-based group"
         action: ALLOW
         source_groups:
           - ip-group-management
-        destination_groups: []
-        services: []
         logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 7: All lab VMs
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # All VMs Policy
+  # ---------------------------------------------------------------------------
   - name: test-all-vms-policy
     display_name: "Test All VMs Policy"
     description: "Test policy for all VMs group"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow All Lab VMs"
-        description: "Test group with all VMs"
         action: ALLOW
         source_groups:
           - all-lab-vms
         destination_groups:
           - all-lab-vms
-        services: []
+        services:
+          - web-services
+          - icmp-ping
         logged: true
 
-  # -------------------------------------------------------------------------
-  # Test Policy 8: Cross-group communication
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Cross-Group Policy
+  # ---------------------------------------------------------------------------
   - name: test-cross-group-policy
     display_name: "Test Cross Group Policy"
     description: "Test communication between different group types"
     category: Application
-    stateful: true
     rules:
       - display_name: "Allow VMs to Segments"
-        description: "Test VM group to segment group"
         action: ALLOW
         source_groups:
           - vm-group-management
         destination_groups:
           - segment-group-tenant01
-        services: []
-        logged: true
+        services:
+          - database-services
 
       - display_name: "Allow Nested to Mixed"
-        description: "Test nested group to mixed group"
         action: ALLOW
         source_groups:
           - nested-group-all-vms
         destination_groups:
           - mixed-group-complete
-        services: []
+
+  # ---------------------------------------------------------------------------
+  # Negate/Exclude Examples
+  # ---------------------------------------------------------------------------
+  - name: test-negate-policy
+    display_name: "Test Negate Policy"
+    description: "Test policy demonstrating source/destination exclusion"
+    category: Application
+    rules:
+      # Block traffic FROM everywhere EXCEPT management networks
+      - display_name: "Block Non-Management Sources"
+        action: DROP
+        source_groups:
+          - ip-group-management
+        sources_excluded: true        # NOT from management = block untrusted
+        destination_groups:
+          - vm-group-nsx
+        logged: true
+
+      # Allow traffic TO everywhere EXCEPT restricted destinations
+      - display_name: "Allow Except Restricted"
+        action: ALLOW
+        source_groups:
+          - vm-group-management
+        destination_groups:
+          - segment-group-holodeck
+        destinations_excluded: true   # NOT to holodeck = allow to everywhere else
+
+      # Block traffic both ways using negate
+      - display_name: "Complex Exclusion Rule"
+        action: DROP
+        source_groups:
+          - vm-group-nas
+        sources_excluded: true        # NOT from NAS
+        destination_groups:
+          - vm-group-nsx
+        destinations_excluded: true   # NOT to NSX
         logged: true

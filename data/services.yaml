@@ -1,54 +1,63 @@
 # =============================================================================
 # NSX-T Services Configuration
 # =============================================================================
-# This file defines custom services with various entry types.
-# Order is preserved - services are created in the order defined here.
+# Defines WHAT traffic (ports/protocols) is allowed in firewall rules.
+#
+# FORMATS:
+#   ports:           Simple "port/protocol" format (e.g., "80/tcp", "53/udp")
+#   l4_port_set_entries: Verbose format for complex cases
+#   icmp_entries:    ICMP type/code definitions
+#   ip_protocol_entries: Raw IP protocol numbers
+#   algorithm_entries:   ALG services (FTP, TFTP, etc.)
+#   members.services:    Nested service groups (reference other services)
+#
+# PREDEFINED SERVICES:
+#   Reference built-in NSX services by name: DNS, NTP, HTTP, HTTPS, SSH, etc.
 # =============================================================================
 
 services:
-  # -------------------------------------------------------------------------
-  # Example: TCP/UDP Service (L4 Port Set)
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # TCP/UDP Services - Simple 'ports' format
+  # ---------------------------------------------------------------------------
+
   - name: web-services
     display_name: "Web Services"
-    description: "HTTP and HTTPS ports"
-    l4_port_set_entries:
-      - display_name: "HTTP"
-        protocol: TCP
-        destination_ports:
-          - "80"
-      - display_name: "HTTPS"
-        protocol: TCP
-        destination_ports:
-          - "443"
+    description: "HTTP and HTTPS"
+    ports:
+      - 80/tcp
+      - 443/tcp
+    tags:
+      - scope: managed-by
+        tag: terraform
 
-  # -------------------------------------------------------------------------
-  # Example: Database ports
-  # -------------------------------------------------------------------------
   - name: database-services
     display_name: "Database Services"
     description: "Common database ports"
-    l4_port_set_entries:
-      - display_name: "MySQL"
-        protocol: TCP
-        destination_ports:
-          - "3306"
-      - display_name: "PostgreSQL"
-        protocol: TCP
-        destination_ports:
-          - "5432"
-      - display_name: "MongoDB"
-        protocol: TCP
-        destination_ports:
-          - "27017"
-      - display_name: "Redis"
-        protocol: TCP
-        destination_ports:
-          - "6379"
+    ports:
+      - 3306/tcp      # MySQL
+      - 5432/tcp      # PostgreSQL
+      - 27017/tcp     # MongoDB
+      - 6379/tcp      # Redis
 
-  # -------------------------------------------------------------------------
-  # Example: ICMP Service
-  # -------------------------------------------------------------------------
+  - name: custom-app
+    display_name: "Custom Application"
+    description: "Custom application ports"
+    ports:
+      - 8080/tcp
+      - 8443/tcp
+      - 9090/tcp
+
+  - name: ephemeral-ports
+    display_name: "Ephemeral Ports"
+    description: "High port ranges"
+    ports:
+      - 49152-65535/tcp
+      - 49152-65535/udp
+
+  # ---------------------------------------------------------------------------
+  # ICMP Services
+  # ---------------------------------------------------------------------------
+
   - name: icmp-all
     display_name: "ICMP All"
     description: "All ICMP traffic"
@@ -58,56 +67,28 @@ services:
       - display_name: "ICMPv6 All"
         protocol: ICMPv6
 
-  # -------------------------------------------------------------------------
-  # Example: ICMP with specific types
-  # -------------------------------------------------------------------------
   - name: icmp-ping
     display_name: "ICMP Ping"
     description: "ICMP echo request/reply only"
     icmp_entries:
       - display_name: "Echo Request"
         protocol: ICMPv4
-        icmp_type: "8"
+        icmp_type: 8
       - display_name: "Echo Reply"
         protocol: ICMPv4
-        icmp_type: "0"
+        icmp_type: 0
 
-  # -------------------------------------------------------------------------
-  # Example: Custom application ports
-  # -------------------------------------------------------------------------
-  - name: custom-app
-    display_name: "Custom Application"
-    description: "Custom application service"
-    l4_port_set_entries:
-      - display_name: "App API"
-        protocol: TCP
-        destination_ports:
-          - "8080"
-          - "8443"
-      - display_name: "App Metrics"
-        protocol: TCP
-        destination_ports:
-          - "9090"
+  # ---------------------------------------------------------------------------
+  # Other Protocol Types
+  # ---------------------------------------------------------------------------
 
-  # -------------------------------------------------------------------------
-  # Example: Port range
-  # -------------------------------------------------------------------------
-  - name: ephemeral-ports
-    display_name: "Ephemeral Ports"
-    description: "High ports range"
-    l4_port_set_entries:
-      - display_name: "Ephemeral TCP"
-        protocol: TCP
-        destination_ports:
-          - "49152-65535"
-      - display_name: "Ephemeral UDP"
-        protocol: UDP
-        destination_ports:
-          - "49152-65535"
+  - name: gre-protocol
+    display_name: "GRE Protocol"
+    description: "GRE tunnel protocol"
+    ip_protocol_entries:
+      - display_name: "GRE"
+        protocol: 47
 
-  # -------------------------------------------------------------------------
-  # Example: ALG Service (FTP)
-  # -------------------------------------------------------------------------
   - name: ftp-service
     display_name: "FTP Service"
     description: "FTP with ALG support"
@@ -116,19 +97,6 @@ services:
         algorithm: FTP
         destination_port: "21"
 
-  # -------------------------------------------------------------------------
-  # Example: IP Protocol Service
-  # -------------------------------------------------------------------------
-  - name: gre-protocol
-    display_name: "GRE Protocol"
-    description: "GRE tunnel protocol"
-    ip_protocol_entries:
-      - display_name: "GRE"
-        protocol: 47
-
-  # -------------------------------------------------------------------------
-  # Example: EtherType Service
-  # -------------------------------------------------------------------------
   - name: arp-service
     display_name: "ARP Service"
     description: "ARP protocol"
@@ -136,9 +104,10 @@ services:
       - display_name: "ARP"
         ether_type: 2054
 
-  # -------------------------------------------------------------------------
-  # Example: Nested Service Group (references other services)
-  # -------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Nested Service Groups - Reference other services
+  # ---------------------------------------------------------------------------
+
   - name: all-web-services
     display_name: "All Web Services"
     description: "Combined web and custom app services"
@@ -147,14 +116,11 @@ services:
         - web-services
         - custom-app
 
-  # -------------------------------------------------------------------------
-  # Example: Nested Service Group with predefined services
-  # -------------------------------------------------------------------------
   - name: standard-services
     display_name: "Standard Network Services"
     description: "Common network services bundle"
     members:
       services:
-        - DNS
-        - NTP
-        - icmp-all
+        - DNS           # predefined NSX service
+        - NTP           # predefined NSX service
+        - icmp-all      # custom service defined above

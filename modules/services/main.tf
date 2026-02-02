@@ -125,10 +125,33 @@ locals {
   }
 
   # ===========================================================================
+  # Parse simplified 'ports' syntax: "80/tcp" -> l4_port_set_entry
+  # ===========================================================================
+
+  services_with_parsed_ports = {
+    for name, svc in var.services : name => merge(
+      svc,
+      {
+        # Combine simplified 'ports' with explicit 'l4_port_set_entries'
+        _all_l4_entries = concat(
+          lookup(svc, "l4_port_set_entries", []),
+          [
+            for port_spec in lookup(svc, "ports", []) : {
+              display_name      = port_spec
+              protocol          = upper(element(split("/", port_spec), 1))
+              destination_ports = [element(split("/", port_spec), 0)]
+            }
+          ]
+        )
+      }
+    )
+  }
+
+  # ===========================================================================
   # Identify services with nested references to local services
   # ===========================================================================
 
-  # Extract service members from each service (supports both formats for backwards compatibility)
+  # Extract service members from each service
   service_members = {
     for name, svc in var.services : name => concat(
       # New format: members.services (consistent with security groups)
@@ -170,7 +193,7 @@ locals {
 
   leaf_services = {
     for name in local.leaf_service_names : name => merge(
-      var.services[name],
+      local.services_with_parsed_ports[name],
       {
         # Resolve service members to paths (external/predefined only for leaf services)
         resolved_service_paths = [
@@ -212,9 +235,9 @@ resource "nsxt_policy_service" "leaf" {
   display_name = each.value.display_name
   description  = lookup(each.value, "description", null)
 
-  # L4 Port Set Entry (TCP/UDP)
+  # L4 Port Set Entry (TCP/UDP) - supports simplified 'ports' and verbose 'l4_port_set_entries'
   dynamic "l4_port_set_entry" {
-    for_each = lookup(each.value, "l4_port_set_entries", [])
+    for_each = each.value._all_l4_entries
     content {
       display_name      = lookup(l4_port_set_entry.value, "display_name", null)
       description       = lookup(l4_port_set_entry.value, "description", null)
@@ -324,7 +347,7 @@ locals {
   # Process nested services (with local service references)
   nested_services = {
     for name in local.nested_service_names : name => merge(
-      var.services[name],
+      local.services_with_parsed_ports[name],
       {
         # Resolve service members to paths (including local leaf services)
         resolved_service_paths = [
@@ -359,9 +382,9 @@ resource "nsxt_policy_service" "nested" {
   # Explicit dependency on leaf services
   depends_on = [nsxt_policy_service.leaf]
 
-  # L4 Port Set Entry (TCP/UDP)
+  # L4 Port Set Entry (TCP/UDP) - supports simplified 'ports' and verbose 'l4_port_set_entries'
   dynamic "l4_port_set_entry" {
-    for_each = lookup(each.value, "l4_port_set_entries", [])
+    for_each = each.value._all_l4_entries
     content {
       display_name      = lookup(l4_port_set_entry.value, "display_name", null)
       description       = lookup(l4_port_set_entry.value, "description", null)
