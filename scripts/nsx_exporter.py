@@ -1,41 +1,100 @@
 #!/usr/bin/env python3
 """
 NSX-T DFW Configuration Exporter
+================================
 
-Extracts existing NSX-T DFW configurations (security groups, services,
-security policies/rules) and converts them to YAML format compatible
-with the Terraform modules.
+This script extracts existing NSX-T Distributed Firewall (DFW) configurations
+from an NSX Manager and converts them to YAML format compatible with the
+Terraform modules in this repository.
 
-Usage:
-    python scripts/nsx_exporter.py \
-        --host nsx-manager.example.com \
-        --username admin \
-        --password 'password' \
+PURPOSE:
+    - Export security groups, services, and security policies from NSX-T
+    - Convert NSX API responses to human-readable YAML format
+    - Resolve internal NSX paths/IDs to friendly display names
+    - Generate Terraform-compatible configuration files
+
+AUTHENTICATION:
+    The script supports two authentication methods:
+    1. Session-based authentication (POST to /api/session/create)
+    2. Basic authentication with Base64-encoded credentials (fallback)
+
+    Session auth is tried first; if it fails, basic auth is used automatically.
+
+OUTPUT FILES:
+    - security_groups.yaml  : Security group definitions (WHO)
+    - services.yaml         : Custom service definitions (WHAT) - predefined excluded
+    - security_policies.yaml: Firewall policies and rules (HOW)
+
+USAGE:
+    # Basic usage with interactive password prompt
+    python scripts/nsx_exporter.py \\
+        --host nsx-manager.example.com \\
+        --username admin \\
         --output data/
 
-    # With options
-    python scripts/nsx_exporter.py \
-        --host nsx-manager.example.com \
-        --username admin \
-        --password 'password' \
-        --output data/ \
-        --domain default \
-        --skip-predefined-services \
+    # With password file (recommended for special characters like !)
+    python scripts/nsx_exporter.py \\
+        --host nsx-manager.example.com \\
+        --username admin \\
+        --password-file /path/to/password.txt \\
+        --output data/
+
+    # Using environment variables
+    export NSX_HOST=nsx-manager.example.com
+    export NSX_USERNAME=admin
+    export NSX_PASSWORD='MyP@ssw0rd!'
+    python scripts/nsx_exporter.py --output data/
+
+    # Include disabled rules and predefined services
+    python scripts/nsx_exporter.py \\
+        --host nsx-manager.example.com \\
+        --username admin \\
+        --password-file /path/to/password.txt \\
+        --output data/ \\
+        --include-predefined-services \\
         --include-disabled-rules
+
+REQUIREMENTS:
+    - Python 3.9+
+    - requests library (pip install requests)
+    - PyYAML library (pip install pyyaml)
+
+API ENDPOINTS USED:
+    - GET /policy/api/v1/infra/domains/{domain}/groups         - Security groups
+    - GET /policy/api/v1/infra/services                        - Services
+    - GET /policy/api/v1/infra/domains/{domain}/security-policies - Policies
+    - GET /policy/api/v1/infra/domains/{domain}/security-policies/{id}/rules - Rules
+    - GET /policy/api/v1/infra/realized-state/virtual-machines - VMs (for name resolution)
+    - GET /policy/api/v1/infra/segments                        - Segments (for name resolution)
+
+NOTES:
+    - System-owned objects (_system_owned: true) are automatically skipped
+    - Predefined services are skipped by default (use --include-predefined-services to include)
+    - Disabled rules are skipped by default (use --include-disabled-rules to include)
+    - VM BIOS UUIDs are resolved to display names for readability
+    - NSX paths are resolved to IDs/names for Terraform compatibility
 """
 
 from __future__ import annotations
 
-import argparse
-import base64
-import getpass
-import json
-import os
-import re
-import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin, quote_plus
+# =============================================================================
+# IMPORTS
+# =============================================================================
+
+import argparse      # Command-line argument parsing
+import base64        # Base64 encoding for HTTP Basic authentication
+import getpass       # Secure password input from terminal
+import json          # JSON parsing for API error responses
+import os            # Environment variable access
+import re            # Regular expressions for path parsing
+import sys           # System exit codes
+from pathlib import Path                          # Cross-platform path handling
+from typing import Any, Dict, List, Optional      # Type hints for better code clarity
+from urllib.parse import urljoin, quote_plus      # URL manipulation utilities
+
+# -----------------------------------------------------------------------------
+# External Dependencies (with graceful error handling)
+# -----------------------------------------------------------------------------
 
 try:
     import requests
@@ -50,14 +109,47 @@ except ImportError:
     print("ERROR: PyYAML is required. Install with: pip install pyyaml")
     sys.exit(1)
 
-# Disable SSL warnings for self-signed certificates
+# Disable SSL warnings for self-signed certificates (common in lab environments)
 import urllib3
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+# =============================================================================
+# NSX EXPORTER CLASS
+# =============================================================================
+
 class NSXExporter:
-    """Exports NSX-T DFW configurations to YAML format."""
+    """
+    Exports NSX-T DFW configurations to YAML format.
+
+    This class handles:
+    - Authentication with NSX Manager (session-based or basic auth)
+    - Fetching security groups, services, and policies via REST API
+    - Resolving internal NSX paths to human-readable names
+    - Transforming API responses to Terraform-compatible YAML format
+
+    Architecture:
+        NSX Manager API --> NSXExporter --> YAML Files
+
+    The exporter maintains internal caches for efficient path resolution:
+        - _group_cache:   Maps group paths/IDs to group objects
+        - _service_cache: Maps service paths/IDs to service objects
+        - _vm_cache:      Maps VM BIOS UUIDs to display names
+        - _segment_cache: Maps segment paths to display names
+
+    Example:
+        exporter = NSXExporter(
+            host="nsx.example.com",
+            username="admin",
+            password="secret"
+        )
+        counts = exporter.export_all(output_dir="./exported")
+        print(f"Exported {counts['groups']} groups")
+    """
+
+    # =========================================================================
+    # INITIALIZATION & AUTHENTICATION
+    # =========================================================================
 
     def __init__(
         self,
@@ -67,43 +159,76 @@ class NSXExporter:
         domain: str = "default",
         verify_ssl: bool = False,
     ):
-        """Initialize the NSX exporter.
+        """
+        Initialize the NSX exporter and authenticate with NSX Manager.
 
         Args:
-            host: NSX Manager hostname or IP
-            username: NSX API username
-            password: NSX API password
-            domain: NSX domain (default: "default")
+            host:       NSX Manager hostname or IP address
+                        Example: "nsx-manager.example.com" or "192.168.1.100"
+            username:   API username with read access to NSX objects
+                        Example: "admin" or "audit-user"
+            password:   API password (supports special characters)
+            domain:     NSX domain for security policies (default: "default")
+                        Most deployments use "default" unless multi-tenancy is configured
             verify_ssl: Whether to verify SSL certificates
+                        Set to False for self-signed certs (common in labs)
+
+        Raises:
+            requests.exceptions.HTTPError: If authentication fails
+            ValueError: If session token cannot be obtained
         """
+        # Store connection parameters
         self.host = host
         self.base_url = f"https://{host}"
         self.username = username
         self.password = password
         self.domain = domain
         self.verify_ssl = verify_ssl
+
+        # Initialize HTTP session with SSL settings
         self.session = requests.Session()
         self.session.verify = verify_ssl
+
+        # XSRF token for session-based authentication (populated during auth)
         self._xsrf_token: Optional[str] = None
 
-        # Caches for path resolution
-        self._group_cache: Dict[str, dict] = {}
-        self._service_cache: Dict[str, dict] = {}
-        self._vm_cache: Dict[str, str] = {}  # bios_id -> display_name
-        self._segment_cache: Dict[str, str] = {}  # path -> display_name
+        # ---------------------------------------------------------------------
+        # Path Resolution Caches
+        # ---------------------------------------------------------------------
+        # These caches store NSX objects for efficient path-to-name resolution.
+        # They're populated when fetching groups/services and used when
+        # transforming policies (which reference groups/services by path).
 
-        # Authenticate and establish session
+        self._group_cache: Dict[str, dict] = {}    # path/id -> group object
+        self._service_cache: Dict[str, dict] = {}  # path/id -> service object
+        self._vm_cache: Dict[str, str] = {}        # bios_uuid -> display_name
+        self._segment_cache: Dict[str, str] = {}   # path -> display_name
+
+        # Authenticate with NSX Manager
         self._authenticate()
 
     def _authenticate(self) -> None:
-        """Authenticate with NSX Manager.
+        """
+        Authenticate with NSX Manager using the best available method.
 
-        Tries session-based authentication first, falls back to basic auth.
+        Authentication Strategy:
+            1. Try session-based authentication first (more secure, supports XSRF)
+            2. Fall back to basic authentication if session auth fails
+
+        Session-based auth is preferred because:
+            - Single authentication, token reused for all requests
+            - Supports XSRF protection
+            - Better for environments with strict security policies
+
+        Basic auth fallback handles:
+            - Older NSX versions
+            - Environments where session auth is disabled
+            - API configurations that only support basic auth
         """
         # Try session-based authentication first
         try:
             self._session_auth()
-            return
+            return  # Success - no need for fallback
         except requests.exceptions.HTTPError as e:
             print(f"  Session auth failed ({e}), trying basic auth...")
 
@@ -111,90 +236,182 @@ class NSXExporter:
         self._basic_auth()
 
     def _session_auth(self) -> None:
-        """Authenticate using session-based authentication."""
+        """
+        Authenticate using NSX session-based authentication.
+
+        Process:
+            1. POST credentials to /api/session/create
+            2. Extract JSESSIONID cookie (stored automatically in session)
+            3. Extract x-xsrf-token header for subsequent requests
+
+        The x-xsrf-token must be included in all subsequent API requests
+        to prevent cross-site request forgery attacks.
+
+        Raises:
+            requests.exceptions.HTTPError: If authentication fails (401/403)
+            ValueError: If x-xsrf-token is not in response headers
+        """
         url = f"{self.base_url}/api/session/create"
 
-        # URL-encode the credentials and send as form data
+        # URL-encode credentials (handles special characters like !, @, #)
+        # Format: j_username=admin&j_password=MyP%40ss
         data = f"j_username={quote_plus(self.username)}&j_password={quote_plus(self.password)}"
+
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
         }
 
         response = self.session.post(url, data=data, headers=headers)
-        response.raise_for_status()
+        response.raise_for_status()  # Raises HTTPError for 4xx/5xx responses
 
         # Extract x-xsrf-token from response headers
+        # This token must be included in all subsequent requests
         self._xsrf_token = response.headers.get("x-xsrf-token")
         if not self._xsrf_token:
             raise ValueError("Failed to get x-xsrf-token from session creation response")
 
+        # Note: JSESSIONID cookie is automatically stored in self.session
+
     def _basic_auth(self) -> None:
-        """Configure basic authentication for all requests using Base64 encoding."""
-        # Encode credentials as Base64
+        """
+        Configure HTTP Basic authentication with Base64-encoded credentials.
+
+        Process:
+            1. Combine username:password
+            2. Base64 encode the combined string
+            3. Set Authorization header: "Basic <encoded>"
+
+        This method sets the Authorization header on the session,
+        which will be included in all subsequent requests.
+
+        Example:
+            admin:VMware1! -> YWRtaW46Vk13YXJlMSE= -> "Basic YWRtaW46Vk13YXJlMSE="
+        """
+        # Combine credentials in standard format
         credentials = f"{self.username}:{self.password}"
+
+        # Base64 encode (must be ASCII bytes, then decode back to string)
         encoded = base64.b64encode(credentials.encode("ascii")).decode("utf-8")
+
+        # Set Authorization header for all future requests
         self.session.headers["Authorization"] = f"Basic {encoded}"
 
+    # =========================================================================
+    # LOW-LEVEL API METHODS
+    # =========================================================================
+
     def _api_get(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """Make a GET request to the NSX API.
+        """
+        Make a GET request to the NSX Policy API.
+
+        This is the core method for all API communication. It:
+            - Constructs the full URL from base_url and endpoint
+            - Adds x-xsrf-token header if using session auth
+            - Handles HTTP errors with descriptive exceptions
 
         Args:
-            endpoint: API endpoint path
-            params: Optional query parameters
+            endpoint: API endpoint path (e.g., "/policy/api/v1/infra/services")
+            params:   Optional query parameters (e.g., {"cursor": "abc123"})
 
         Returns:
-            JSON response as dictionary
+            Parsed JSON response as a dictionary
+
+        Raises:
+            requests.exceptions.HTTPError: For 4xx/5xx responses
+
+        Example:
+            response = self._api_get("/policy/api/v1/infra/services")
+            services = response.get("results", [])
         """
         url = urljoin(self.base_url, endpoint)
+
+        # Add XSRF token if using session authentication
         headers = {}
         if self._xsrf_token:
             headers["x-xsrf-token"] = self._xsrf_token
+
         response = self.session.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
     def _get_all_paginated(self, endpoint: str, result_key: str = "results") -> list:
-        """Get all results from a paginated API endpoint.
+        """
+        Fetch all results from a paginated NSX API endpoint.
+
+        NSX API uses cursor-based pagination for large result sets.
+        This method automatically follows pagination cursors until
+        all results are retrieved.
+
+        Pagination Flow:
+            1. Make initial request
+            2. If response contains "cursor", make another request with cursor
+            3. Repeat until no more cursors
 
         Args:
-            endpoint: API endpoint path
-            result_key: Key containing results in response
+            endpoint:   API endpoint path
+            result_key: Key in response containing the results array
+                        (usually "results", but some endpoints differ)
 
         Returns:
-            List of all results across all pages
+            Combined list of all results across all pages
+
+        Example:
+            # Fetch all VMs (may be thousands across multiple pages)
+            vms = self._get_all_paginated(
+                "/policy/api/v1/infra/realized-state/virtual-machines"
+            )
         """
         all_results = []
         cursor = None
 
         while True:
+            # Build params dict with cursor if we have one
             params = {}
             if cursor:
                 params["cursor"] = cursor
 
+            # Fetch this page
             response = self._api_get(endpoint, params)
             results = response.get(result_key, [])
             all_results.extend(results)
 
+            # Check for next page
             cursor = response.get("cursor")
             if not cursor:
-                break
+                break  # No more pages
 
         return all_results
 
     # =========================================================================
-    # API Methods
+    # HIGH-LEVEL API METHODS (Data Fetching)
     # =========================================================================
 
     def get_groups(self) -> List[dict]:
-        """Get all security groups from the NSX domain.
+        """
+        Fetch all security groups from the NSX domain.
+
+        Security groups define WHO is affected by firewall rules.
+        Groups can contain:
+            - Virtual machines (by BIOS UUID or tag)
+            - Segments (network segments)
+            - IP addresses/ranges
+            - Other groups (nested groups)
+
+        API Endpoint:
+            GET /policy/api/v1/infra/domains/{domain}/groups
+
+        Side Effects:
+            Populates self._group_cache for path resolution
 
         Returns:
             List of group objects from the API
+            Each group has: id, display_name, expression, tags, etc.
         """
         endpoint = f"/policy/api/v1/infra/domains/{self.domain}/groups"
         groups = self._get_all_paginated(endpoint)
 
-        # Cache for path resolution
+        # Cache groups for path resolution when processing policies
+        # Groups are referenced by path in rules, we need to resolve to names
         for group in groups:
             self._group_cache[group.get("path", "")] = group
             self._group_cache[group.get("id", "")] = group
@@ -202,7 +419,26 @@ class NSXExporter:
         return groups
 
     def get_services(self) -> List[dict]:
-        """Get all services from NSX.
+        """
+        Fetch all services from NSX (both custom and predefined).
+
+        Services define WHAT traffic (ports/protocols) is matched by rules.
+        Service types include:
+            - L4 port sets (TCP/UDP ports)
+            - ICMP types
+            - IP protocols (GRE, ESP, etc.)
+            - ALG services (FTP, TFTP)
+            - Nested service groups
+
+        API Endpoint:
+            GET /policy/api/v1/infra/services
+
+        Note:
+            This returns ALL services including NSX predefined services.
+            Use is_predefined_service() to filter them out if needed.
+
+        Side Effects:
+            Populates self._service_cache for path resolution
 
         Returns:
             List of service objects from the API
@@ -210,7 +446,7 @@ class NSXExporter:
         endpoint = "/policy/api/v1/infra/services"
         services = self._get_all_paginated(endpoint)
 
-        # Cache for path resolution
+        # Cache services for path resolution when processing rules
         for service in services:
             self._service_cache[service.get("path", "")] = service
             self._service_cache[service.get("id", "")] = service
@@ -218,15 +454,33 @@ class NSXExporter:
         return services
 
     def get_policies(self) -> List[dict]:
-        """Get all security policies from the NSX domain.
+        """
+        Fetch all security policies and their rules from the NSX domain.
+
+        Security policies define HOW traffic is handled (ALLOW/DROP/REJECT).
+        Each policy contains multiple rules that are evaluated in order.
+
+        IMPORTANT: Rules are NOT included in the main policies response!
+        This method makes additional API calls to fetch rules for each policy.
+
+        API Endpoints:
+            GET /policy/api/v1/infra/domains/{domain}/security-policies
+            GET /policy/api/v1/infra/domains/{domain}/security-policies/{id}/rules
+
+        Policy Categories (evaluation order):
+            1. Ethernet      - Layer 2 rules
+            2. Emergency     - Break-glass rules
+            3. Infrastructure- Core services (DNS, NTP, AD)
+            4. Environment   - Environment isolation
+            5. Application   - Application-specific rules
 
         Returns:
-            List of policy objects from the API (with rules included)
+            List of policy objects with "rules" key populated
         """
         endpoint = f"/policy/api/v1/infra/domains/{self.domain}/security-policies"
         policies = self._get_all_paginated(endpoint)
 
-        # Fetch rules for each policy (rules are not included in the main response)
+        # Fetch rules for each policy (rules are NOT in the main response)
         for policy in policies:
             policy_id = policy.get("id", "")
             if policy_id:
@@ -235,12 +489,29 @@ class NSXExporter:
                     rules = self._get_all_paginated(rules_endpoint)
                     policy["rules"] = rules
                 except Exception:
+                    # If rules fetch fails, continue with empty rules
                     policy["rules"] = []
 
         return policies
 
     def get_vms(self) -> List[dict]:
-        """Get all VMs for display name resolution.
+        """
+        Fetch all VMs from NSX realized state for name resolution.
+
+        VMs are referenced in security groups by their BIOS UUID, but
+        we want human-readable display names in the exported YAML.
+
+        This method builds a cache mapping BIOS UUIDs to display names.
+
+        API Endpoint:
+            GET /policy/api/v1/infra/realized-state/virtual-machines
+
+        BIOS UUID Location:
+            The BIOS UUID is in the compute_ids array as "biosUuid:xxxx"
+            Example: ["biosUuid:4208c71b-4ce4-ad18-5f5d-9ccb26c5f488", ...]
+
+        Side Effects:
+            Populates self._vm_cache with bios_uuid -> display_name mappings
 
         Returns:
             List of VM objects from the API
@@ -248,14 +519,15 @@ class NSXExporter:
         endpoint = "/policy/api/v1/infra/realized-state/virtual-machines"
         vms = self._get_all_paginated(endpoint)
 
-        # Cache bios_uuid -> display_name mapping
-        # The BIOS UUID is what NSX uses in ExternalIDExpression for VMs
+        # Build bios_uuid -> display_name mapping
+        # This is used when resolving ExternalIDExpression in groups
         for vm in vms:
             display_name = vm.get("display_name", "")
             if not display_name:
                 continue
 
             # Extract biosUuid from compute_ids array
+            # Format: ["moIdOnHost:123", "biosUuid:xxxx-xxxx-xxxx", ...]
             compute_ids = vm.get("compute_ids", [])
             for cid in compute_ids:
                 if cid.startswith("biosUuid:"):
@@ -271,7 +543,17 @@ class NSXExporter:
         return vms
 
     def get_segments(self) -> List[dict]:
-        """Get all segments for path resolution.
+        """
+        Fetch all segments from NSX for path resolution.
+
+        Segments (network segments) are referenced by path in security groups.
+        This method builds a cache mapping paths to display names.
+
+        API Endpoint:
+            GET /policy/api/v1/infra/segments
+
+        Side Effects:
+            Populates self._segment_cache with path -> display_name mappings
 
         Returns:
             List of segment objects from the API
@@ -279,7 +561,7 @@ class NSXExporter:
         endpoint = "/policy/api/v1/infra/segments"
         segments = self._get_all_paginated(endpoint)
 
-        # Cache path -> display_name mapping
+        # Build path -> display_name mapping
         for segment in segments:
             path = segment.get("path", "")
             display_name = segment.get("display_name", "")
@@ -289,42 +571,67 @@ class NSXExporter:
         return segments
 
     # =========================================================================
-    # Path Resolution
+    # PATH RESOLUTION METHODS
     # =========================================================================
+    # These methods convert NSX internal paths/IDs to human-readable names.
+    # This makes the exported YAML more readable and Terraform-compatible.
 
     def resolve_group_path_to_name(self, path: str) -> str:
-        """Resolve a group path to its display name or ID.
+        """
+        Resolve a group path to its ID or display name.
+
+        NSX rules reference groups by full path:
+            /infra/domains/default/groups/my-group-id
+
+        We want just the group name for YAML readability:
+            my-group-id
+
+        Resolution order:
+            1. Check cache for full object, return ID
+            2. Extract ID from path using regex
+            3. Return original path as fallback
 
         Args:
-            path: NSX group path (e.g., /infra/domains/default/groups/my-group)
+            path: Full NSX path or "ANY"
+                  Example: "/infra/domains/default/groups/web-servers"
 
         Returns:
-            Group name suitable for YAML reference
+            Group name/ID suitable for YAML
+            Example: "web-servers"
         """
         if not path or path.upper() == "ANY":
             return path
 
-        # Check cache first
+        # Check cache first (populated by get_groups())
         if path in self._group_cache:
             group = self._group_cache[path]
-            # Prefer name over id for cleaner YAML
             return group.get("id", group.get("display_name", path))
 
         # Extract ID from path as fallback
+        # Path format: /infra/domains/default/groups/<group-id>
         match = re.search(r"/groups/([^/]+)$", path)
         if match:
             return match.group(1)
 
-        return path
+        return path  # Return original if nothing else works
 
     def resolve_service_path_to_name(self, path: str) -> str:
-        """Resolve a service path to its display name or ID.
+        """
+        Resolve a service path to its ID or display name.
+
+        NSX rules reference services by full path:
+            /infra/services/DNS  (predefined)
+            /infra/services/my-custom-service  (custom)
+
+        We want just the service name:
+            DNS
+            my-custom-service
 
         Args:
-            path: NSX service path (e.g., /infra/services/my-service)
+            path: Full NSX path or "ANY"
 
         Returns:
-            Service name suitable for YAML reference
+            Service name/ID suitable for YAML
         """
         if not path or path.upper() == "ANY":
             return path
@@ -332,10 +639,10 @@ class NSXExporter:
         # Check cache first
         if path in self._service_cache:
             service = self._service_cache[path]
-            # Use id for consistency (predefined services use consistent IDs)
             return service.get("id", service.get("display_name", path))
 
         # Extract ID from path as fallback
+        # Path format: /infra/services/<service-id>
         match = re.search(r"/services/([^/]+)$", path)
         if match:
             return match.group(1)
@@ -343,55 +650,102 @@ class NSXExporter:
         return path
 
     def resolve_vm_bios_id_to_name(self, bios_id: str) -> Optional[str]:
-        """Resolve a VM BIOS ID to its display name.
+        """
+        Resolve a VM BIOS UUID to its display name.
+
+        Security groups reference VMs by BIOS UUID in ExternalIDExpression.
+        We want display names for readability:
+            4208c71b-4ce4-ad18-5f5d-9ccb26c5f488 -> web-server-01
 
         Args:
             bios_id: VM BIOS UUID
 
         Returns:
-            VM display name or None if not found
+            VM display name, or None if not found in cache
         """
         return self._vm_cache.get(bios_id)
 
     def resolve_segment_path_to_name(self, path: str) -> Optional[str]:
-        """Resolve a segment path to its display name.
+        """
+        Resolve a segment path to its display name.
 
         Args:
-            path: NSX segment path
+            path: Full NSX segment path
 
         Returns:
-            Segment display name or None if not found
+            Segment display name, or None if not found in cache
         """
         return self._segment_cache.get(path)
 
     def is_predefined_service(self, service: dict) -> bool:
-        """Check if a service is a predefined NSX system service.
+        """
+        Check if a service is a predefined NSX system service.
+
+        Predefined services (DNS, HTTP, SSH, etc.) are built into NSX
+        and shouldn't be exported to custom services.yaml.
+
+        Detection:
+            - _system_owned: true  (most reliable)
+            - is_default: true     (alternative flag)
 
         Args:
             service: Service object from API
 
         Returns:
-            True if this is a predefined service
+            True if this is a predefined/system service
         """
         return service.get("_system_owned", False) or service.get("is_default", False)
 
     # =========================================================================
-    # Transformation Methods
+    # TRANSFORMATION METHODS
     # =========================================================================
+    # These methods convert NSX API responses to YAML-compatible dictionaries.
+    # The output format matches what the Terraform modules expect.
 
     def transform_group(self, api_group: dict) -> Optional[dict]:
-        """Transform an API group object to YAML format.
+        """
+        Transform an NSX API group object to YAML format.
+
+        NSX Group Structure:
+            - id, display_name, description
+            - expression: Array of membership criteria
+            - tags: Resource tags
+
+        Expression Types Handled:
+            - ExternalIDExpression: VMs by BIOS UUID
+            - PathExpression: Segments, groups by path
+            - IPAddressExpression: IP addresses/ranges
+            - MACAddressExpression: MAC addresses
+            - Condition: Tag-based or attribute matching
+            - NestedExpression: Complex nested criteria
+
+        Output YAML Format:
+            name: group-id
+            display_name: "Human Readable Name"
+            description: "Optional description"
+            members:
+              virtual_machines: [vm1, vm2]
+              segments: [seg1, seg2]
+              groups: [nested-group1]
+            criteria:
+              - conditions:
+                  - value: "scope|tag"
+              - ip_addresses: [10.0.0.0/8]
+            tags:
+              - scope: managed-by
+                tag: terraform
 
         Args:
             api_group: Group object from NSX API
 
         Returns:
-            Dictionary in YAML format or None if should be skipped
+            Dictionary in YAML format, or None if group should be skipped
         """
-        # Skip system-owned groups
+        # Skip system-owned groups (NSX internal groups)
         if api_group.get("_system_owned", False):
             return None
 
+        # Initialize result with basic fields
         result: dict[str, Any] = {
             "name": api_group.get("id", api_group.get("display_name")),
             "display_name": api_group.get("display_name"),
@@ -400,36 +754,42 @@ class NSXExporter:
         if api_group.get("description"):
             result["description"] = api_group["description"]
 
-        # Process expression (criteria/members)
+        # Process expression array (membership criteria)
         expression = api_group.get("expression", [])
-        members: Dict[str, list] = {}
-        criteria: List[dict] = []
+        members: Dict[str, list] = {}   # Static members (VMs, segments, groups)
+        criteria: List[dict] = []        # Dynamic criteria (tags, IPs, conditions)
 
         for expr in expression:
             resource_type = expr.get("resource_type", "")
 
+            # -----------------------------------------------------------------
+            # ExternalIDExpression: VMs referenced by BIOS UUID
+            # -----------------------------------------------------------------
             if resource_type == "ExternalIDExpression":
-                # VM members by BIOS ID
                 external_ids = expr.get("external_ids", [])
                 member_type = expr.get("member_type", "VirtualMachine")
 
                 if member_type == "VirtualMachine":
                     vm_names = []
                     for bios_id in external_ids:
+                        # Try to resolve BIOS UUID to display name
                         vm_name = self.resolve_vm_bios_id_to_name(bios_id)
                         if vm_name:
                             vm_names.append(vm_name)
                         else:
-                            # Keep the BIOS ID if we can't resolve it
+                            # Keep BIOS UUID if can't resolve (manual cleanup needed)
                             vm_names.append(bios_id)
                     if vm_names:
                         members.setdefault("virtual_machines", []).extend(vm_names)
 
+            # -----------------------------------------------------------------
+            # PathExpression: Segments, groups, or other objects by path
+            # -----------------------------------------------------------------
             elif resource_type == "PathExpression":
-                # Static members by path (segments, groups, etc.)
                 member_paths = expr.get("member_paths", [])
                 for path in member_paths:
                     if "/segments/" in path:
+                        # Segment reference
                         seg_name = self.resolve_segment_path_to_name(path)
                         if seg_name:
                             members.setdefault("segments", []).append(seg_name)
@@ -439,29 +799,36 @@ class NSXExporter:
                             if match:
                                 members.setdefault("segments", []).append(match.group(1))
                     elif "/groups/" in path:
+                        # Nested group reference
                         group_name = self.resolve_group_path_to_name(path)
                         members.setdefault("groups", []).append(group_name)
                     else:
-                        # Other path types - keep as-is for now
+                        # Other path types - keep as-is
                         members.setdefault("paths", []).append(path)
 
+            # -----------------------------------------------------------------
+            # IPAddressExpression: IP addresses or CIDR ranges
+            # -----------------------------------------------------------------
             elif resource_type == "IPAddressExpression":
-                # IP address criteria
                 ip_addresses = expr.get("ip_addresses", [])
                 if ip_addresses:
                     criteria.append({"ip_addresses": ip_addresses})
 
+            # -----------------------------------------------------------------
+            # MACAddressExpression: MAC addresses
+            # -----------------------------------------------------------------
             elif resource_type == "MACAddressExpression":
-                # MAC address criteria
                 mac_addresses = expr.get("mac_addresses", [])
                 if mac_addresses:
                     criteria.append({"mac_addresses": mac_addresses})
 
+            # -----------------------------------------------------------------
+            # Condition: Tag-based or attribute matching
+            # -----------------------------------------------------------------
             elif resource_type == "Condition":
-                # Condition-based criteria (tags, names, etc.)
                 condition = self._transform_condition(expr)
                 if condition:
-                    # Find existing criteria block with conditions or create new one
+                    # Group conditions together in a single criteria block
                     found = False
                     for c in criteria:
                         if "conditions" in c:
@@ -471,8 +838,10 @@ class NSXExporter:
                     if not found:
                         criteria.append({"conditions": [condition]})
 
+            # -----------------------------------------------------------------
+            # NestedExpression: Complex nested criteria
+            # -----------------------------------------------------------------
             elif resource_type == "NestedExpression":
-                # Nested expression - recurse
                 nested_expressions = expr.get("expressions", [])
                 for nested_expr in nested_expressions:
                     nested_type = nested_expr.get("resource_type", "")
@@ -488,20 +857,16 @@ class NSXExporter:
                             if not found:
                                 criteria.append({"conditions": [condition]})
 
-            elif resource_type == "ConjunctionOperator":
-                # Conjunction between expressions - skip for now
-                # The YAML format handles this implicitly with criteria blocks
-                pass
+            # ConjunctionOperator is skipped - YAML format handles implicitly
 
-        # Add members if any
+        # Add members and criteria to result if present
         if members:
             result["members"] = members
 
-        # Add criteria if any
         if criteria:
             result["criteria"] = criteria
 
-        # Process tags
+        # Process resource tags
         tags = api_group.get("tags", [])
         if tags:
             result["tags"] = [{"scope": t.get("scope", ""), "tag": t.get("tag", "")} for t in tags]
@@ -509,13 +874,26 @@ class NSXExporter:
         return result
 
     def _transform_condition(self, condition: dict) -> Optional[dict]:
-        """Transform an API condition to YAML format.
+        """
+        Transform an NSX condition to YAML format.
+
+        Conditions are used for tag-based or attribute-based matching.
+
+        NSX Condition Fields:
+            - key: "Tag", "Name", "OSName", "ComputerName"
+            - value: The value to match (e.g., "scope|tag" for tags)
+            - operator: "EQUALS", "CONTAINS", "STARTSWITH", etc.
+            - member_type: "VirtualMachine", "Segment", etc.
+
+        Output Format (minimal - only non-default values):
+            value: "production|environment"
+            # key, operator, member_type only if not default
 
         Args:
             condition: Condition object from NSX API
 
         Returns:
-            Dictionary in YAML format or None if invalid
+            Dictionary in YAML format, or None if invalid
         """
         key = condition.get("key", "Tag")
         value = condition.get("value", "")
@@ -525,9 +903,10 @@ class NSXExporter:
         if not value:
             return None
 
+        # Start with required field
         result: dict[str, Any] = {"value": value}
 
-        # Only include non-default values
+        # Only include non-default values to keep YAML clean
         if member_type != "VirtualMachine":
             result["member_type"] = member_type
 
@@ -540,15 +919,40 @@ class NSXExporter:
         return result
 
     def transform_service(self, api_service: dict) -> Optional[dict]:
-        """Transform an API service object to YAML format.
+        """
+        Transform an NSX API service object to YAML format.
+
+        Service Entry Types:
+            - L4PortSetServiceEntry: TCP/UDP ports
+            - ICMPTypeServiceEntry: ICMP type/code
+            - IPProtocolServiceEntry: IP protocol numbers
+            - IGMPTypeServiceEntry: IGMP
+            - EtherTypeServiceEntry: Layer 2 protocols
+            - ALGTypeServiceEntry: Application Layer Gateway
+            - NestedServiceServiceEntry: Reference to another service
+
+        Output YAML Format:
+            name: my-service
+            display_name: "My Service"
+            description: "Optional description"
+            ports:           # Simplified format when possible
+              - 80/tcp
+              - 443/tcp
+            icmp_entries:    # ICMP-specific
+              - protocol: ICMPv4
+                icmp_type: 8
+            members:         # Nested services
+              services:
+                - DNS
+                - NTP
 
         Args:
             api_service: Service object from NSX API
 
         Returns:
-            Dictionary in YAML format or None if should be skipped
+            Dictionary in YAML format, or None if should be skipped
         """
-        # Skip predefined services
+        # Skip predefined NSX services
         if self.is_predefined_service(api_service):
             return None
 
@@ -562,14 +966,16 @@ class NSXExporter:
 
         # Process service entries
         service_entries = api_service.get("service_entries", [])
-        ports: List[str] = []
-        l4_entries: List[dict] = []
-        icmp_entries: List[dict] = []
-        ip_protocol_entries: List[dict] = []
-        igmp_entries: List[dict] = []
-        ether_type_entries: List[dict] = []
-        algorithm_entries: List[dict] = []
-        nested_services: List[str] = []
+
+        # Collectors for different entry types
+        ports: List[str] = []                    # Simplified "port/protocol" format
+        l4_entries: List[dict] = []              # Verbose L4 entries
+        icmp_entries: List[dict] = []            # ICMP entries
+        ip_protocol_entries: List[dict] = []     # IP protocol entries
+        igmp_entries: List[dict] = []            # IGMP entries
+        ether_type_entries: List[dict] = []      # EtherType entries
+        algorithm_entries: List[dict] = []       # ALG entries
+        nested_services: List[str] = []          # Nested service references
 
         for entry in service_entries:
             resource_type = entry.get("resource_type", "")
@@ -578,7 +984,7 @@ class NSXExporter:
                 transformed = self._transform_l4_entry(entry)
                 if transformed:
                     if transformed.get("_simple"):
-                        # Use simplified ports format
+                        # Use simplified "port/protocol" format
                         ports.append(transformed["_simple"])
                     else:
                         l4_entries.append(transformed)
@@ -609,38 +1015,30 @@ class NSXExporter:
                     algorithm_entries.append(transformed)
 
             elif resource_type == "NestedServiceServiceEntry":
-                # Nested service reference
                 nested_path = entry.get("nested_service_path", "")
                 if nested_path:
                     service_name = self.resolve_service_path_to_name(nested_path)
                     nested_services.append(service_name)
 
-        # Add entries to result
+        # Add entries to result (only if non-empty)
         if ports:
             result["ports"] = ports
-
         if l4_entries:
             result["l4_port_set_entries"] = l4_entries
-
         if icmp_entries:
             result["icmp_entries"] = icmp_entries
-
         if ip_protocol_entries:
             result["ip_protocol_entries"] = ip_protocol_entries
-
         if igmp_entries:
             result["igmp_entries"] = igmp_entries
-
         if ether_type_entries:
             result["ether_type_entries"] = ether_type_entries
-
         if algorithm_entries:
             result["algorithm_entries"] = algorithm_entries
-
         if nested_services:
             result["members"] = {"services": nested_services}
 
-        # Process tags
+        # Process resource tags
         tags = api_service.get("tags", [])
         if tags:
             result["tags"] = [{"scope": t.get("scope", ""), "tag": t.get("tag", "")} for t in tags]
@@ -648,20 +1046,29 @@ class NSXExporter:
         return result
 
     def _transform_l4_entry(self, entry: dict) -> Optional[dict]:
-        """Transform an L4 port set entry to YAML format.
+        """
+        Transform an L4 port set entry to YAML format.
+
+        Tries to use simplified "port/protocol" format when possible:
+            80/tcp, 443/tcp, 53/udp
+
+        Falls back to verbose format for complex cases:
+            protocol: TCP
+            destination_ports: [80, 443]
+            source_ports: [1024-65535]
 
         Args:
             entry: L4PortSetServiceEntry from NSX API
 
         Returns:
-            Dictionary in YAML format with optional _simple key for ports format
+            Dictionary with either "_simple" key (simplified) or full format
         """
         protocol = entry.get("l4_protocol", "TCP")
         dest_ports = entry.get("destination_ports", [])
         source_ports = entry.get("source_ports", [])
         display_name = entry.get("display_name", "")
 
-        # Try to use simplified format: "port/protocol"
+        # Try simplified format: single dest port, no source port
         if len(dest_ports) == 1 and not source_ports:
             port = dest_ports[0]
             simple = f"{port}/{protocol.lower()}"
@@ -669,16 +1076,12 @@ class NSXExporter:
 
         # Use verbose format
         result: dict[str, Any] = {"protocol": protocol}
-
         if display_name:
             result["display_name"] = display_name
-
         if dest_ports:
             result["destination_ports"] = dest_ports
-
         if source_ports:
             result["source_ports"] = source_ports
-
         if entry.get("description"):
             result["description"] = entry["description"]
 
@@ -687,92 +1090,87 @@ class NSXExporter:
     def _transform_icmp_entry(self, entry: dict) -> dict:
         """Transform an ICMP entry to YAML format."""
         result: dict[str, Any] = {}
-
         if entry.get("display_name"):
             result["display_name"] = entry["display_name"]
-
         result["protocol"] = entry.get("protocol", "ICMPv4")
-
         if entry.get("icmp_type") is not None:
             result["icmp_type"] = entry["icmp_type"]
-
         if entry.get("icmp_code") is not None:
             result["icmp_code"] = entry["icmp_code"]
-
         if entry.get("description"):
             result["description"] = entry["description"]
-
         return result
 
     def _transform_ip_protocol_entry(self, entry: dict) -> dict:
         """Transform an IP protocol entry to YAML format."""
         result: dict[str, Any] = {}
-
         if entry.get("display_name"):
             result["display_name"] = entry["display_name"]
-
         result["protocol"] = entry.get("protocol_number", 0)
-
         if entry.get("description"):
             result["description"] = entry["description"]
-
         return result
 
     def _transform_igmp_entry(self, entry: dict) -> dict:
         """Transform an IGMP entry to YAML format."""
         result: dict[str, Any] = {}
-
         if entry.get("display_name"):
             result["display_name"] = entry["display_name"]
-
         if entry.get("description"):
             result["description"] = entry["description"]
-
         return result
 
     def _transform_ether_type_entry(self, entry: dict) -> dict:
         """Transform an EtherType entry to YAML format."""
         result: dict[str, Any] = {}
-
         if entry.get("display_name"):
             result["display_name"] = entry["display_name"]
-
         result["ether_type"] = entry.get("ether_type", 0)
-
         if entry.get("description"):
             result["description"] = entry["description"]
-
         return result
 
     def _transform_algorithm_entry(self, entry: dict) -> dict:
-        """Transform an ALG entry to YAML format."""
+        """Transform an ALG (Application Layer Gateway) entry to YAML format."""
         result: dict[str, Any] = {}
-
         if entry.get("display_name"):
             result["display_name"] = entry["display_name"]
-
         result["algorithm"] = entry.get("alg", "")
         result["destination_port"] = entry.get("destination_ports", [""])[0]
-
         if entry.get("source_ports"):
             result["source_ports"] = entry["source_ports"]
-
         if entry.get("description"):
             result["description"] = entry["description"]
-
         return result
 
     def transform_policy(
         self, api_policy: dict, include_disabled_rules: bool = False
     ) -> Optional[dict]:
-        """Transform an API policy object to YAML format.
+        """
+        Transform an NSX API policy object to YAML format.
+
+        Output YAML Format:
+            name: policy-id
+            display_name: "My Policy"
+            description: "Optional description"
+            category: Application
+            rules:
+              - display_name: "Allow Web Traffic"
+                action: ALLOW
+                source_groups: [web-servers]
+                destination_groups: [db-servers]
+                services: [HTTPS, HTTP]
+                logged: true
+            tags:
+              - scope: managed-by
+                tag: terraform
 
         Args:
             api_policy: Policy object from NSX API
             include_disabled_rules: Whether to include disabled rules
 
         Returns:
-            Dictionary in YAML format or None if should be skipped
+            Dictionary in YAML format, or None if should be skipped
         """
         # Skip system-owned policies
         if api_policy.get("_system_owned", False):
@@ -786,7 +1184,7 @@ class NSXExporter:
         if api_policy.get("description"):
             result["description"] = api_policy["description"]
 
-        # Category
+        # Policy category (determines evaluation order)
         category = api_policy.get("category", "Application")
         result["category"] = category
 
@@ -806,7 +1204,7 @@ class NSXExporter:
         if transformed_rules:
             result["rules"] = transformed_rules
 
-        # Process tags
+        # Process resource tags
         tags = api_policy.get("tags", [])
         if tags:
             result["tags"] = [{"scope": t.get("scope", ""), "tag": t.get("tag", "")} for t in tags]
@@ -814,13 +1212,26 @@ class NSXExporter:
         return result
 
     def _transform_rule(self, api_rule: dict) -> Optional[dict]:
-        """Transform an API rule to YAML format.
+        """
+        Transform an NSX API rule to YAML format.
+
+        Rule Fields:
+            - display_name: Rule name
+            - action: ALLOW, DROP, or REJECT
+            - source_groups: List of source group paths (resolved to names)
+            - destination_groups: List of destination group paths
+            - services: List of service paths (resolved to names)
+            - direction: IN_OUT (default), IN, or OUT
+            - logged: Enable logging
+            - disabled: Rule is disabled
+            - sources_excluded: Negate source groups
+            - destinations_excluded: Negate destination groups
 
         Args:
             api_rule: Rule object from NSX API
 
         Returns:
-            Dictionary in YAML format or None if invalid
+            Dictionary in YAML format
         """
         result: dict[str, Any] = {"display_name": api_rule.get("display_name", "unnamed")}
 
@@ -831,7 +1242,7 @@ class NSXExporter:
         action = api_rule.get("action", "ALLOW")
         result["action"] = action
 
-        # Source groups
+        # Source groups (resolve paths to names)
         source_groups = api_rule.get("source_groups", [])
         if source_groups and source_groups != ["ANY"]:
             resolved_sources = []
@@ -843,11 +1254,11 @@ class NSXExporter:
             if resolved_sources:
                 result["source_groups"] = resolved_sources
 
-        # Source exclusion
+        # Source exclusion (negate)
         if api_rule.get("sources_excluded", False):
             result["sources_excluded"] = True
 
-        # Destination groups
+        # Destination groups (resolve paths to names)
         dest_groups = api_rule.get("destination_groups", [])
         if dest_groups and dest_groups != ["ANY"]:
             resolved_dests = []
@@ -859,11 +1270,11 @@ class NSXExporter:
             if resolved_dests:
                 result["destination_groups"] = resolved_dests
 
-        # Destination exclusion
+        # Destination exclusion (negate)
         if api_rule.get("destinations_excluded", False):
             result["destinations_excluded"] = True
 
-        # Services
+        # Services (resolve paths to names)
         services = api_rule.get("services", [])
         if services and services != ["ANY"]:
             resolved_services = []
@@ -909,7 +1320,7 @@ class NSXExporter:
         return result
 
     # =========================================================================
-    # Export Methods
+    # EXPORT METHODS
     # =========================================================================
 
     def export_all(
@@ -918,22 +1329,35 @@ class NSXExporter:
         skip_predefined_services: bool = True,
         include_disabled_rules: bool = False,
     ) -> dict:
-        """Export all DFW configurations to YAML files.
+        """
+        Export all DFW configurations to YAML files.
+
+        This is the main entry point for exporting. It:
+            1. Pre-fetches VMs and segments for name resolution
+            2. Exports security groups to security_groups.yaml
+            3. Exports custom services to services.yaml
+            4. Exports policies and rules to security_policies.yaml
 
         Args:
-            output_dir: Directory to write YAML files
-            skip_predefined_services: Skip predefined NSX services
+            output_dir: Directory to write YAML files (created if not exists)
+            skip_predefined_services: Skip built-in NSX services
             include_disabled_rules: Include disabled rules in export
 
         Returns:
-            Dictionary with counts of exported items
+            Dictionary with counts: {groups, services, policies, rules}
+
+        Example:
+            counts = exporter.export_all(output_dir="./exported")
+            print(f"Exported {counts['groups']} groups, {counts['rules']} rules")
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
         counts = {"groups": 0, "services": 0, "policies": 0, "rules": 0}
 
+        # ---------------------------------------------------------------------
         # Pre-fetch VMs and segments for name resolution
+        # ---------------------------------------------------------------------
         print("Fetching VMs for name resolution...")
         self.get_vms()
         print(f"  Cached {len(self._vm_cache)} VMs")
@@ -942,7 +1366,9 @@ class NSXExporter:
         self.get_segments()
         print(f"  Cached {len(self._segment_cache)} segments")
 
-        # Export groups
+        # ---------------------------------------------------------------------
+        # Export security groups
+        # ---------------------------------------------------------------------
         print("\nExporting security groups...")
         groups = self.get_groups()
         transformed_groups = []
@@ -961,7 +1387,9 @@ class NSXExporter:
             )
             print(f"  Wrote {counts['groups']} groups to {groups_file}")
 
+        # ---------------------------------------------------------------------
         # Export services
+        # ---------------------------------------------------------------------
         print("\nExporting services...")
         services = self.get_services()
         transformed_services = []
@@ -982,7 +1410,9 @@ class NSXExporter:
             )
             print(f"  Wrote {counts['services']} services to {services_file}")
 
-        # Export policies
+        # ---------------------------------------------------------------------
+        # Export policies and rules
+        # ---------------------------------------------------------------------
         print("\nExporting security policies...")
         policies = self.get_policies()
         transformed_policies = []
@@ -1005,14 +1435,21 @@ class NSXExporter:
         return counts
 
     def _write_yaml(self, path: Path, data: dict, header: str = "") -> None:
-        """Write data to a YAML file with optional header.
+        """
+        Write data to a YAML file with optional header comment.
+
+        Features:
+            - Adds descriptive header comment
+            - Uses block style for readability
+            - Preserves key order (no sorting)
+            - Handles multiline strings with | style
 
         Args:
             path: Output file path
-            data: Data to write
-            header: Optional comment header
+            data: Dictionary to write as YAML
+            header: Optional comment header (added before YAML)
         """
-        # Custom YAML representer for clean output
+        # Custom representer for clean multiline string output
         def str_representer(dumper, data):
             if "\n" in data:
                 return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
@@ -1027,14 +1464,19 @@ class NSXExporter:
             yaml.dump(
                 data,
                 f,
-                default_flow_style=False,
-                sort_keys=False,
-                allow_unicode=True,
-                width=120,
+                default_flow_style=False,  # Use block style, not inline
+                sort_keys=False,            # Preserve key order
+                allow_unicode=True,         # Support Unicode characters
+                width=120,                  # Line width for wrapping
             )
 
+    # =========================================================================
+    # YAML FILE HEADERS
+    # =========================================================================
+    # These provide helpful documentation at the top of each exported file.
+
     def _get_groups_header(self) -> str:
-        """Get the header comment for security_groups.yaml."""
+        """Header comment for security_groups.yaml."""
         return """# =============================================================================
 # NSX-T Security Groups Configuration
 # =============================================================================
@@ -1053,7 +1495,7 @@ class NSXExporter:
 """
 
     def _get_services_header(self) -> str:
-        """Get the header comment for services.yaml."""
+        """Header comment for services.yaml."""
         return """# =============================================================================
 # NSX-T Services Configuration
 # =============================================================================
@@ -1072,7 +1514,7 @@ class NSXExporter:
 """
 
     def _get_policies_header(self) -> str:
-        """Get the header comment for security_policies.yaml."""
+        """Header comment for security_policies.yaml."""
         return """# =============================================================================
 # NSX-T Security Policies Configuration
 # =============================================================================
@@ -1094,33 +1536,54 @@ class NSXExporter:
 """
 
 
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+
 def main():
-    """Main entry point for the NSX exporter."""
+    """
+    Main entry point for the NSX exporter CLI.
+
+    Handles:
+        - Command-line argument parsing
+        - Environment variable fallbacks
+        - Password input (file, argument, or interactive)
+        - Error handling with helpful messages
+    """
+    # -------------------------------------------------------------------------
+    # Argument Parser Setup
+    # -------------------------------------------------------------------------
     parser = argparse.ArgumentParser(
         description="Export NSX-T DFW configurations to YAML format",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Basic usage
+    # Basic usage (prompts for password)
     %(prog)s --host nsx.example.com --username admin --output data/
 
-    # With all options
-    %(prog)s \\
-        --host nsx.example.com \\
-        --username admin \\
-        --password 'secret' \\
-        --output exported/ \\
-        --domain default \\
-        --skip-predefined-services \\
-        --include-disabled-rules
+    # With password file (recommended for special characters)
+    %(prog)s --host nsx.example.com --username admin \\
+        --password-file /path/to/password.txt --output data/
+
+    # Using environment variables
+    export NSX_HOST=nsx.example.com
+    export NSX_USERNAME=admin
+    export NSX_PASSWORD='MyP@ssw0rd!'
+    %(prog)s --output data/
+
+    # Include disabled rules and predefined services
+    %(prog)s --host nsx.example.com --username admin \\
+        --password-file /path/to/password.txt --output data/ \\
+        --include-predefined-services --include-disabled-rules
 
 Environment Variables:
-    NSX_HOST      NSX Manager hostname
-    NSX_USERNAME  API username
-    NSX_PASSWORD  API password
+    NSX_HOST      NSX Manager hostname (alternative to --host)
+    NSX_USERNAME  API username (alternative to --username)
+    NSX_PASSWORD  API password (alternative to --password)
 """,
     )
 
+    # Connection arguments
     parser.add_argument(
         "--host",
         default=os.environ.get("NSX_HOST"),
@@ -1139,19 +1602,22 @@ Environment Variables:
     parser.add_argument(
         "--password-file",
         type=Path,
-        help="Read NSX API password from file (avoids shell escaping issues)",
+        help="Read NSX API password from file (avoids shell escaping issues with special characters)",
     )
+
+    # Output arguments
     parser.add_argument(
-        "--output",
-        "-o",
+        "--output", "-o",
         default="data",
         help="Output directory for YAML files (default: data)",
     )
     parser.add_argument(
         "--domain",
         default="default",
-        help="NSX domain (default: default)",
+        help="NSX domain for security policies (default: default)",
     )
+
+    # Filter arguments
     parser.add_argument(
         "--skip-predefined-services",
         action="store_true",
@@ -1161,41 +1627,49 @@ Environment Variables:
     parser.add_argument(
         "--include-predefined-services",
         action="store_true",
-        help="Include predefined NSX services",
+        help="Include predefined NSX services in export",
     )
     parser.add_argument(
         "--include-disabled-rules",
         action="store_true",
         help="Include disabled rules in export",
     )
+
+    # Other arguments
     parser.add_argument(
         "--verify-ssl",
         action="store_true",
-        help="Verify SSL certificates (default: false)",
+        help="Verify SSL certificates (default: false for self-signed certs)",
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
+        "-v", "--verbose",
         action="store_true",
-        help="Enable verbose output",
+        help="Enable verbose output (show stack traces on error)",
     )
 
     args = parser.parse_args()
 
-    # Validate required arguments
+    # -------------------------------------------------------------------------
+    # Validate Required Arguments
+    # -------------------------------------------------------------------------
     if not args.host:
         parser.error("--host is required (or set NSX_HOST environment variable)")
 
     if not args.username:
         parser.error("--username is required (or set NSX_USERNAME environment variable)")
 
-    # Get password from file, argument, or interactively
+    # -------------------------------------------------------------------------
+    # Get Password (file > argument > environment > interactive)
+    # -------------------------------------------------------------------------
     password = None
     if args.password_file:
+        # Read from file (best for passwords with special characters like !)
         password = args.password_file.read_text().strip()
     elif args.password:
+        # From command line argument
         password = args.password
     else:
+        # Interactive prompt (most secure, but not scriptable)
         password = getpass.getpass(f"Password for {args.username}@{args.host}: ")
 
     # Handle --include-predefined-services flag
@@ -1203,8 +1677,11 @@ Environment Variables:
     if args.include_predefined_services:
         skip_predefined = False
 
-    print(f"NSX-T DFW Configuration Exporter")
-    print(f"================================")
+    # -------------------------------------------------------------------------
+    # Print Configuration Summary
+    # -------------------------------------------------------------------------
+    print("NSX-T DFW Configuration Exporter")
+    print("================================")
     print(f"Host: {args.host}")
     print(f"Domain: {args.domain}")
     print(f"Output: {args.output}")
@@ -1212,6 +1689,9 @@ Environment Variables:
     print(f"Include disabled rules: {args.include_disabled_rules}")
     print()
 
+    # -------------------------------------------------------------------------
+    # Run Export
+    # -------------------------------------------------------------------------
     try:
         exporter = NSXExporter(
             host=args.host,
@@ -1227,6 +1707,7 @@ Environment Variables:
             include_disabled_rules=args.include_disabled_rules,
         )
 
+        # Print summary
         print()
         print("=" * 50)
         print("Export Summary")
@@ -1238,6 +1719,9 @@ Environment Variables:
         print()
         print("Export completed successfully!")
 
+    # -------------------------------------------------------------------------
+    # Error Handling
+    # -------------------------------------------------------------------------
     except requests.exceptions.ConnectionError as e:
         print(f"ERROR: Failed to connect to NSX Manager at {args.host}")
         print(f"       {e}")
@@ -1255,10 +1739,13 @@ Environment Variables:
         print(f"ERROR: {e}")
         if args.verbose:
             import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
+
+# =============================================================================
+# SCRIPT ENTRY POINT
+# =============================================================================
 
 if __name__ == "__main__":
     main()
