@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import json
 import os
@@ -34,7 +35,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote_plus
 
 try:
     import requests
@@ -77,18 +78,62 @@ class NSXExporter:
         """
         self.host = host
         self.base_url = f"https://{host}"
-        self.auth = HTTPBasicAuth(username, password)
+        self.username = username
+        self.password = password
         self.domain = domain
         self.verify_ssl = verify_ssl
         self.session = requests.Session()
-        self.session.auth = self.auth
         self.session.verify = verify_ssl
+        self._xsrf_token: Optional[str] = None
 
         # Caches for path resolution
         self._group_cache: Dict[str, dict] = {}
         self._service_cache: Dict[str, dict] = {}
         self._vm_cache: Dict[str, str] = {}  # bios_id -> display_name
         self._segment_cache: Dict[str, str] = {}  # path -> display_name
+
+        # Authenticate and establish session
+        self._authenticate()
+
+    def _authenticate(self) -> None:
+        """Authenticate with NSX Manager.
+
+        Tries session-based authentication first, falls back to basic auth.
+        """
+        # Try session-based authentication first
+        try:
+            self._session_auth()
+            return
+        except requests.exceptions.HTTPError as e:
+            print(f"  Session auth failed ({e}), trying basic auth...")
+
+        # Fall back to basic authentication
+        self._basic_auth()
+
+    def _session_auth(self) -> None:
+        """Authenticate using session-based authentication."""
+        url = f"{self.base_url}/api/session/create"
+
+        # URL-encode the credentials and send as form data
+        data = f"j_username={quote_plus(self.username)}&j_password={quote_plus(self.password)}"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        response = self.session.post(url, data=data, headers=headers)
+        response.raise_for_status()
+
+        # Extract x-xsrf-token from response headers
+        self._xsrf_token = response.headers.get("x-xsrf-token")
+        if not self._xsrf_token:
+            raise ValueError("Failed to get x-xsrf-token from session creation response")
+
+    def _basic_auth(self) -> None:
+        """Configure basic authentication for all requests using Base64 encoding."""
+        # Encode credentials as Base64
+        credentials = f"{self.username}:{self.password}"
+        encoded = base64.b64encode(credentials.encode("ascii")).decode("utf-8")
+        self.session.headers["Authorization"] = f"Basic {encoded}"
 
     def _api_get(self, endpoint: str, params: Optional[dict] = None) -> dict:
         """Make a GET request to the NSX API.
@@ -101,7 +146,10 @@ class NSXExporter:
             JSON response as dictionary
         """
         url = urljoin(self.base_url, endpoint)
-        response = self.session.get(url, params=params)
+        headers = {}
+        if self._xsrf_token:
+            headers["x-xsrf-token"] = self._xsrf_token
+        response = self.session.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
@@ -173,10 +221,23 @@ class NSXExporter:
         """Get all security policies from the NSX domain.
 
         Returns:
-            List of policy objects from the API
+            List of policy objects from the API (with rules included)
         """
         endpoint = f"/policy/api/v1/infra/domains/{self.domain}/security-policies"
-        return self._get_all_paginated(endpoint)
+        policies = self._get_all_paginated(endpoint)
+
+        # Fetch rules for each policy (rules are not included in the main response)
+        for policy in policies:
+            policy_id = policy.get("id", "")
+            if policy_id:
+                rules_endpoint = f"/policy/api/v1/infra/domains/{self.domain}/security-policies/{policy_id}/rules"
+                try:
+                    rules = self._get_all_paginated(rules_endpoint)
+                    policy["rules"] = rules
+                except Exception:
+                    policy["rules"] = []
+
+        return policies
 
     def get_vms(self) -> List[dict]:
         """Get all VMs for display name resolution.
@@ -187,11 +248,24 @@ class NSXExporter:
         endpoint = "/policy/api/v1/infra/realized-state/virtual-machines"
         vms = self._get_all_paginated(endpoint)
 
-        # Cache bios_id -> display_name mapping
+        # Cache bios_uuid -> display_name mapping
+        # The BIOS UUID is what NSX uses in ExternalIDExpression for VMs
         for vm in vms:
-            external_id = vm.get("external_id", "")
             display_name = vm.get("display_name", "")
-            if external_id and display_name:
+            if not display_name:
+                continue
+
+            # Extract biosUuid from compute_ids array
+            compute_ids = vm.get("compute_ids", [])
+            for cid in compute_ids:
+                if cid.startswith("biosUuid:"):
+                    bios_uuid = cid.split(":", 1)[1]
+                    self._vm_cache[bios_uuid] = display_name
+                    break
+
+            # Also cache by external_id as fallback
+            external_id = vm.get("external_id", "")
+            if external_id:
                 self._vm_cache[external_id] = display_name
 
         return vms
@@ -1063,6 +1137,11 @@ Environment Variables:
         help="NSX API password (or set NSX_PASSWORD env var, or enter interactively)",
     )
     parser.add_argument(
+        "--password-file",
+        type=Path,
+        help="Read NSX API password from file (avoids shell escaping issues)",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         default="data",
@@ -1110,9 +1189,13 @@ Environment Variables:
     if not args.username:
         parser.error("--username is required (or set NSX_USERNAME environment variable)")
 
-    # Get password interactively if not provided
-    password = args.password
-    if not password:
+    # Get password from file, argument, or interactively
+    password = None
+    if args.password_file:
+        password = args.password_file.read_text().strip()
+    elif args.password:
+        password = args.password
+    else:
         password = getpass.getpass(f"Password for {args.username}@{args.host}: ")
 
     # Handle --include-predefined-services flag
